@@ -1,0 +1,1565 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PINPOP • Pins para tus Crocs & Estetoscopio | Catálogo Oficial</title>
+  
+  <!-- Favicon using official brand logo -->
+  <link rel="icon" type="image/png" href="images/brand/pinpop-logo-web.png">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            pinpop: {
+              pink: '#FF2D8A',      // Rosa Principal
+              black: '#111111',     // Preto/Texto
+              lightpink: '#FFE8F1', // Rosa Claro
+              mint: '#A7E8D4',      // Verde Menta
+              yellow: '#FFD84D',    // Amarelo
+              bg: '#F4F5F7'         // Cinza Fundo
+            }
+          },
+          fontFamily: {
+            sans: ['Poppins', 'system-ui', 'sans-serif'],
+            display: ['Sora', 'system-ui', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- Custom Brand Stylesheet (PINPOP Visual Identity) -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-[#F4F5F7] text-[#111111] font-sans min-h-screen flex flex-col antialiased selection:bg-[#FF2D8A] selection:text-white">
+
+  <!-- Promo Top Announcement Bar (Amarelo / Rosa Claro Accent) -->
+  <div class="bg-gradient-to-r from-[#FF2D8A] via-[#111111] to-[#FF2D8A] text-white text-[11px] sm:text-xs py-2 px-4 text-center font-bold tracking-wide shadow-xs flex items-center justify-center gap-2">
+    <span class="inline-block animate-bounce">🛵</span>
+    <span id="promoBannerText">¡Dale personalidad a tus Crocs y Estetoscopio! ✨ Envíos en el día en Asunción y todo Paraguay</span>
+    <span class="hidden sm:inline-block">• Delivery Gratis desde Gs. 100.000</span>
+  </div>
+
+  <!-- Header / Navigation -->
+  <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs transition-all">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center justify-between h-20 gap-3">
+        
+        <!-- Official Brand Logo -->
+        <a href="#" class="flex items-center gap-2 group shrink-0">
+          <img 
+            src="images/brand/pinpop-logo-web.png" 
+            onerror="this.src='/images/brand/pinpop-logo-web.png'"
+            alt="PINPOP • Pins para tus Crocs & Estetoscopio" 
+            class="h-11 sm:h-14 w-auto object-contain group-hover:scale-105 transition-transform drop-shadow-xs"
+          />
+        </a>
+
+        <!-- Search Bar (Desktop) -->
+        <div class="hidden md:flex flex-1 max-w-md mx-4">
+          <div class="relative w-full">
+            <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+            <input 
+              type="text" 
+              id="searchInputDesktop" 
+              placeholder="Buscar pins (ej: Stitch, Medicina, Flores, Corazón...)" 
+              class="w-full pl-10 pr-4 py-2 bg-slate-100 hover:bg-slate-50 focus:bg-white border border-slate-200 rounded-full text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25 focus:border-[#FF2D8A] transition-all"
+            />
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="flex items-center gap-2 sm:gap-3">
+          
+          <!-- Favorites / Wishlist Button -->
+          <button 
+            id="favoritesToggleBtn"
+            class="p-2 sm:px-3 sm:py-2 rounded-full border border-slate-200 hover:border-[#FF2D8A] text-slate-700 hover:text-[#FF2D8A] text-xs font-bold transition-all flex items-center gap-1.5 relative select-none"
+            title="Mis Favoritos"
+          >
+            <i data-lucide="heart" class="w-4 h-4 text-[#FF2D8A]"></i>
+            <span class="hidden sm:inline">Favoritos</span>
+            <span id="favCountBadge" class="hidden absolute -top-1 -right-1 bg-[#FF2D8A] text-white text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+              0
+            </span>
+          </button>
+
+          <!-- Interactive Simulator Trigger Button -->
+          <button 
+            id="openSimulatorBtn" 
+            class="p-2 sm:px-3.5 sm:py-2 rounded-full border border-slate-200 hover:border-[#FF2D8A] text-slate-700 hover:text-[#FF2D8A] text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs select-none"
+            title="Probar pins en calzado o estetoscopio"
+          >
+            <i data-lucide="sparkles" class="w-4 h-4 text-[#FF2D8A]"></i>
+            <span class="hidden sm:inline">Simulador</span>
+          </button>
+
+          <!-- Cart Drawer Button -->
+          <button 
+            id="cartButton" 
+            class="btn-pinpop-primary px-3 sm:px-4 py-2 rounded-full font-bold text-xs flex items-center gap-2 shadow-xs transition-all select-none"
+          >
+            <i data-lucide="shopping-bag" class="w-4 h-4"></i>
+            <span class="hidden sm:inline">Carrito</span>
+            <span id="cartCountBadge" class="bg-[#111111] text-white text-[11px] font-black px-2 py-0.5 rounded-full">
+              0
+            </span>
+          </button>
+
+          <!-- Admin Portal Link -->
+          <button 
+            id="openAdminBtn" 
+            class="p-2 text-slate-400 hover:text-[#111111] transition-colors rounded-full hover:bg-slate-100" 
+            title="Administración"
+          >
+            <i data-lucide="shield-check" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Mobile Search Bar -->
+      <div class="pb-3 md:hidden">
+        <div class="relative w-full">
+          <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2"></i>
+          <input 
+            type="text" 
+            id="searchInputMobile" 
+            placeholder="Buscar pins (ej: Stitch, EKG, Corazón...)" 
+            class="w-full pl-10 pr-4 py-2 bg-slate-100 focus:bg-white border border-slate-200 rounded-full text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25"
+          />
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- LINE SELECTOR (CROCS vs. ESTETOSCOPIO) -->
+  <section class="bg-white border-b border-slate-200 shadow-xs">
+    <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2.5">
+      <div class="flex items-center justify-center">
+        <div class="inline-flex p-1 bg-slate-100 rounded-2xl border border-slate-200 w-full sm:w-auto max-w-md">
+          <button 
+            id="tabModeCrocs" 
+            class="tab-target-btn flex-1 py-2.5 px-3 sm:px-5 rounded-xl font-display font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all bg-[#FF2D8A] text-white shadow-xs"
+          >
+            <span class="text-base sm:text-lg">🐊</span>
+            <span>Pins para Crocs</span>
+            <span id="badgeCountCrocs" class="text-[10px] px-1.5 py-0.2 bg-white/20 rounded-full hidden sm:inline">15</span>
+          </button>
+          
+          <button 
+            id="tabModeEstetoscopio" 
+            class="tab-target-btn flex-1 py-2.5 px-3 sm:px-5 rounded-xl font-display font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all text-slate-600 hover:text-[#FF2D8A]"
+          >
+            <span class="text-base sm:text-lg">🩺</span>
+            <span>Pins para Estetoscopio</span>
+            <span id="badgeCountSteth" class="text-[10px] px-1.5 py-0.2 bg-emerald-100 text-emerald-800 rounded-full font-bold">Nuevo</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Hero Visual Banner -->
+  <section class="relative bg-gradient-to-b from-white to-[#F4F5F7] border-b border-slate-200/80 overflow-hidden py-6 sm:py-9">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center space-y-3">
+      <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black tracking-wide uppercase bg-[#FFE8F1] text-[#FF2D8A] border border-[#FF2D8A]/20">
+        <span id="heroTargetTag">🐊 PINS COMPATIBLES CON CALZADOS CROCS</span>
+      </div>
+      
+      <h1 id="heroMainTitle" class="text-2xl sm:text-4xl lg:text-5xl font-black font-display text-[#111111] tracking-tight">
+        Dale onda a tus Crocs ✨
+      </h1>
+      
+      <p id="heroSubtitle" class="text-xs sm:text-sm text-slate-600 max-w-xl mx-auto leading-relaxed">
+        Elegí tus pins favoritos, armá tu carrito y enviá tu pedido directamente por <strong>WhatsApp</strong> con confirmación rápida y stock en tiempo real en Guaraníes.
+      </p>
+
+      <!-- Trust Badges -->
+      <div class="pt-2 flex flex-wrap items-center justify-center gap-3 sm:gap-6 text-slate-500 text-[11px] font-bold">
+        <div class="flex items-center gap-1.5">
+          <i data-lucide="check-circle" class="w-3.5 h-3.5 text-emerald-500"></i>
+          <span>Stock Garantizado</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <i data-lucide="truck" class="w-3.5 h-3.5 text-[#FF2D8A]"></i>
+          <span>Envíos en el Día</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <i data-lucide="message-circle" class="w-3.5 h-3.5 text-emerald-600"></i>
+          <span>Checkout WhatsApp</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <i data-lucide="zoom-in" class="w-3.5 h-3.5 text-[#FF2D8A]"></i>
+          <span>Lupa de Zoom 2.5x</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Category Filter Bar (Chips Horizontales) -->
+  <section class="sticky top-20 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200/80 py-2.5">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5" id="categoryChipsContainer">
+        <!-- Rendered by JS -->
+      </div>
+    </div>
+  </section>
+
+  <!-- Filter & Stock Toggle Subheader -->
+  <section class="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-2">
+    <div class="flex items-center justify-between gap-3 text-xs flex-wrap">
+      <div class="flex items-center gap-2">
+        <label class="inline-flex items-center gap-1.5 cursor-pointer select-none text-slate-700 font-bold bg-white px-3 py-1.5 rounded-full border border-slate-200 hover:border-slate-300">
+          <input type="checkbox" id="onlyInStockCheckbox" class="rounded text-[#FF2D8A] focus:ring-[#FF2D8A] w-3.5 h-3.5">
+          <span>Solo en stock</span>
+        </label>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button id="clearFiltersBtn" class="text-slate-500 hover:text-[#FF2D8A] text-xs font-bold transition-colors">
+          Limpiar filtros
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Catalog Grid (Strict 2-Columns on Mobile!) -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-6">
+    
+    <!-- Results Header -->
+    <div class="flex items-center justify-between text-xs text-slate-500 mb-4 px-1">
+      <span id="productResultsCount" class="font-medium">Cargando catálogo...</span>
+      <div class="flex items-center gap-2">
+        <span id="favoriteFilterNotice" class="hidden font-bold text-[#FF2D8A] bg-[#FFE8F1] px-2.5 py-0.5 rounded-lg text-[11px] flex items-center gap-1">
+          <i data-lucide="heart" class="w-3 h-3 fill-[#FF2D8A]"></i> Mostrando Favoritos
+        </span>
+        <div id="activeCategoryBadge" class="hidden font-bold text-[#FF2D8A] bg-[#FFE8F1] px-2.5 py-0.5 rounded-lg text-[11px]"></div>
+      </div>
+    </div>
+
+    <!-- Product Grid: STRICT 2 columns on mobile (grid-cols-2), 3 on tablet, 4 on desktop -->
+    <div 
+      id="productGrid" 
+      class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-6"
+    >
+      <!-- Rendered dynamically by app.js -->
+    </div>
+
+    <!-- Empty State -->
+    <div id="emptyState" class="hidden text-center py-16 px-4 space-y-3">
+      <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-2xl">
+        🔍
+      </div>
+      <h3 class="font-display font-black text-slate-800 text-lg">No encontramos pins con ese criterio</h3>
+      <p class="text-xs text-slate-500 max-w-sm mx-auto">
+        Probá con otra categoría o buscá términos como "Stitch", "Medicina", "Flor", "Corazón".
+      </p>
+    </div>
+
+  </main>
+
+  <!-- PRODUCT DETAIL MODAL CON LUPA DE AUMENTO (Requerimiento 3) -->
+  <div id="productDetailModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+    <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 overflow-hidden transform transition-all my-auto max-h-[92vh] flex flex-col">
+      
+      <!-- Top Modal Bar -->
+      <div class="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+        <div class="flex items-center gap-2">
+          <span id="modalProductTargetBadge" class="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-[#111111] text-white">
+            🐊 Crocs
+          </span>
+          <span id="modalProductSku" class="text-xs font-mono font-bold text-slate-400">SKU</span>
+        </div>
+        
+        <div class="flex items-center gap-2">
+          <!-- Favorite button inside modal -->
+          <button id="modalFavoriteBtn" class="p-1.5 rounded-full hover:bg-slate-200 text-slate-400 hover:text-[#FF2D8A] transition-colors flex items-center gap-1" title="Guardar favorito">
+            <i data-lucide="heart" class="w-4 h-4"></i>
+            <span class="text-[11px] font-medium">Favorito</span>
+          </button>
+          
+          <button id="closeProductDetailModalBtn" class="w-8 h-8 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center transition-colors">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Body (Scrollable) -->
+      <div class="p-5 overflow-y-auto space-y-4">
+        
+        <!-- Interactive Image Zoom Lens Container (Requerimiento 3) -->
+        <div class="relative bg-slate-50 rounded-2xl border border-slate-100 p-4 flex items-center justify-center aspect-square">
+          
+          <div id="modalZoomContainer" class="zoom-container w-full h-full flex items-center justify-center cursor-crosshair">
+            <img 
+              id="modalProductImage" 
+              src="" 
+              alt="Pin" 
+              class="zoom-image w-full h-full object-contain filter drop-shadow-md select-none"
+            />
+            <div id="modalZoomLens" class="zoom-lens-indicator pointer-events-none hidden"></div>
+          </div>
+
+          <!-- Zoom Lens Helper Badge -->
+          <div class="absolute bottom-2.5 left-2.5 pointer-events-none bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 shadow-xs">
+            <i data-lucide="zoom-in" class="w-3 h-3 text-[#FF2D8A]"></i>
+            <span class="hidden sm:inline">Pasá el cursor para zoom 2.5x</span>
+            <span class="sm:hidden">Toque para zoom</span>
+          </div>
+
+          <!-- Mobile Zoom Button -->
+          <button id="modalMobileZoomToggle" class="sm:hidden absolute bottom-2.5 right-2.5 bg-white/90 border border-slate-200 text-slate-800 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-xs active:scale-95">
+            🔍 Zoom
+          </button>
+        </div>
+
+        <!-- Product Details -->
+        <div>
+          <div class="flex items-center justify-between">
+            <span id="modalProductCategory" class="text-xs font-extrabold uppercase tracking-wider text-[#FF2D8A]">
+              Categoría
+            </span>
+            <span id="modalProductBadge" class="hidden badge-nuevo px-2 py-0.5 rounded-full text-[9px] font-black uppercase">
+              Nuevo
+            </span>
+          </div>
+
+          <h2 id="modalProductName" class="text-lg sm:text-xl font-black text-[#111111] mt-1">
+            Nombre del Pin
+          </h2>
+
+          <!-- Prices & Stock -->
+          <div class="mt-2 flex items-baseline gap-2">
+            <span id="modalProductPrice" class="text-xl sm:text-2xl font-black text-[#111111]">
+              Gs. 0
+            </span>
+            <span id="modalProductPromoPrice" class="text-xs text-slate-400 line-through hidden font-medium">
+              Gs. 0
+            </span>
+          </div>
+
+          <!-- Stock Status Badge -->
+          <div id="modalStockContainer" class="mt-2 text-xs flex items-center gap-1.5 font-bold">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+
+        <!-- Description -->
+        <p id="modalProductDesc" class="text-xs text-slate-600 leading-relaxed border-t border-slate-100 pt-3">
+          Descripción del accesorio.
+        </p>
+
+        <!-- Quantity & Add to Cart -->
+        <div class="pt-3 border-t border-slate-100 flex items-center gap-3">
+          <div class="flex items-center border border-slate-200 rounded-2xl bg-slate-50 p-1">
+            <button id="modalQtyDec" class="w-8 h-8 rounded-xl bg-white hover:bg-slate-200 active:scale-95 text-slate-700 font-black text-sm flex items-center justify-center shadow-xs">
+              −
+            </button>
+            <span id="modalQtyDisplay" class="w-10 text-center font-black text-sm text-slate-800">1</span>
+            <button id="modalQtyInc" class="w-8 h-8 rounded-xl bg-white hover:bg-slate-200 active:scale-95 text-slate-700 font-black text-sm flex items-center justify-center shadow-xs">
+              +
+            </button>
+          </div>
+
+          <button 
+            id="modalAddToCartBtn" 
+            class="btn-pinpop-primary flex-1 py-3 px-4 font-black text-xs sm:text-sm rounded-2xl shadow-md flex items-center justify-center gap-2"
+          >
+            <i data-lucide="shopping-bag" class="w-4 h-4"></i>
+            <span>Agregar al carrito</span>
+          </button>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- DUAL SIMULATOR MODAL (CROCS CLOG + ESTETOSCOPIO TUBE) -->
+  <div id="simulatorModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+    <div class="bg-white w-full max-w-4xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
+      
+      <!-- Modal Header with Switcher -->
+      <div class="p-4 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50">
+        <div class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-[#FF2D8A]"></span>
+          <h3 class="font-display font-black text-base text-slate-900">Simulador de Pins & Charms</h3>
+        </div>
+
+        <!-- Mode Toggle inside simulator -->
+        <div class="inline-flex p-1 bg-slate-200/80 rounded-xl border border-slate-300">
+          <button id="simSwitchCrocsBtn" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-[#FF2D8A] text-white">
+            🐊 Calzado Crocs
+          </button>
+          <button id="simSwitchStethBtn" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-slate-600 hover:text-[#FF2D8A]">
+            🩺 Estetoscopio
+          </button>
+        </div>
+
+        <button id="closeSimulatorBtn" class="w-8 h-8 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Simulator Workspace -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 flex-1 overflow-hidden">
+        
+        <!-- Interactive Preview Area -->
+        <div class="lg:col-span-8 p-4 sm:p-6 flex flex-col items-center justify-center bg-slate-100/70 border-b lg:border-b-0 lg:border-r border-slate-200 relative overflow-hidden">
+          
+          <!-- View 1: Crocs Shoe Preview -->
+          <div id="simCrocsView" class="relative w-full max-w-md aspect-[4/3] flex items-center justify-center">
+            <img 
+              src="images/crocs-clog.png" 
+              alt="Calzado Crocs Base" 
+              class="w-full h-full object-contain filter drop-shadow-xl select-none"
+            />
+            <div id="crocsHolesContainer" class="absolute inset-0">
+              <!-- Rendered by JS -->
+            </div>
+          </div>
+
+          <!-- View 2: Stethoscope Tubing Preview -->
+          <div id="simStethView" class="hidden relative w-full max-w-md aspect-[4/3] flex items-center justify-center">
+            <img 
+              src="images/stethoscope-tube.png" 
+              alt="Estetoscopio Clínico Base" 
+              class="w-full h-full object-contain filter drop-shadow-xl select-none"
+            />
+            <div id="stethClipsContainer" class="absolute inset-0">
+              <!-- Rendered by JS -->
+            </div>
+          </div>
+
+          <!-- Simulator Counter & Clear -->
+          <div class="mt-4 flex items-center gap-3">
+            <span class="text-xs font-bold text-slate-600">
+              Pins colocados: <strong id="simulatorPinCountBadge" class="text-[#FF2D8A] font-black">0 / 8</strong>
+            </span>
+            <button id="clearSimulatorClogBtn" class="text-[11px] font-bold text-slate-500 hover:text-rose-600 underline">
+              Vaciar simulador
+            </button>
+          </div>
+        </div>
+
+        <!-- Right Side: Pins Tray -->
+        <div class="lg:col-span-4 p-4 flex flex-col bg-white">
+          <span class="font-display font-black text-xs uppercase tracking-wider text-slate-400 mb-2">
+            Bandeja de Pines Disponibles (Clic para colocar)
+          </span>
+
+          <div id="simulatorTrayContainer" class="flex-1 overflow-y-auto max-h-72 lg:max-h-none grid grid-cols-3 gap-2 pr-1">
+            <!-- Rendered by JS -->
+          </div>
+
+          <!-- Add All from Simulator to Cart -->
+          <div class="pt-4 border-t border-slate-100 mt-2">
+            <button 
+              id="addAllSimulatorPinsToCartBtn" 
+              class="btn-pinpop-primary w-full py-2.5 font-black text-xs rounded-xl shadow flex items-center justify-center gap-2"
+            >
+              <i data-lucide="shopping-bag" class="w-4 h-4"></i>
+              <span>Comprar esta combinación</span>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Shopping Cart Drawer -->
+  <div id="cartDrawer" class="fixed inset-0 z-50 hidden">
+    <div id="cartBackdrop" class="absolute inset-0 bg-slate-900/50 backdrop-blur-xs transition-opacity"></div>
+    <div class="absolute inset-y-0 right-0 max-w-full flex pl-10">
+      <div class="w-screen max-w-md bg-white shadow-2xl flex flex-col border-l border-slate-200">
+        
+        <!-- Drawer Header -->
+        <div class="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+          <div class="flex items-center gap-2">
+            <i data-lucide="shopping-bag" class="w-5 h-5 text-[#FF2D8A]"></i>
+            <h3 class="font-display font-black text-base text-slate-900">Tu Carrito de Pins</h3>
+            <span id="cartDrawerCountBadge" class="text-xs bg-[#FFE8F1] text-[#FF2D8A] font-black px-2 py-0.5 rounded-full">
+              0 pins
+            </span>
+          </div>
+          <button id="closeCartBtn" class="w-8 h-8 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center transition-colors">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <!-- Cart Items List -->
+        <div id="cartItemsContainer" class="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3">
+          <!-- Rendered by JS -->
+        </div>
+
+        <!-- Cart Empty Notice -->
+        <div id="cartEmptyNotice" class="hidden flex-1 flex flex-col items-center justify-center p-6 text-center space-y-2">
+          <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center text-3xl">
+            🐊
+          </div>
+          <p class="font-bold text-slate-800 text-base">Tu carrito está vacío</p>
+          <p class="text-xs text-slate-500 mt-1 max-w-xs">
+            ¡Elegí tus pins favoritos de Crocs o Estetoscopio para armar tu pedido!
+          </p>
+          <button id="startShoppingBtn" class="mt-4 px-4 py-2 bg-[#FF2D8A] text-white text-xs font-bold rounded-xl hover:bg-[#E01E75] transition-colors">
+            Ver Catálogo
+          </button>
+        </div>
+
+        <!-- Cart Footer & WhatsApp Trigger -->
+        <div id="cartFooterSection" class="border-t border-slate-200 p-4 sm:p-5 bg-slate-50 space-y-3.5">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-slate-500 font-bold">Subtotal:</span>
+            <span id="cartTotalText" class="font-display font-black text-lg text-slate-900">Gs. 0</span>
+          </div>
+
+          <p class="text-[11px] text-slate-500">
+            🛵 Delivery con costo fijo de Gs. 15.000 (¡Gratis a partir de Gs. 100.000!).
+          </p>
+
+          <button 
+            id="proceedToCheckoutBtn" 
+            class="btn-pinpop-whatsapp w-full py-3.5 rounded-2xl font-black text-sm flex items-center justify-center gap-2 shadow-md transition-all active:scale-95"
+          >
+            <i data-lucide="message-circle" class="w-5 h-5"></i>
+            <span>Continuar con WhatsApp 📲</span>
+          </button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- WhatsApp Checkout Modal -->
+  <div id="checkoutModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+    <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 overflow-hidden transform transition-all my-auto max-h-[92vh] flex flex-col">
+      
+      <!-- Checkout Header -->
+      <div class="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50 shrink-0">
+        <div class="flex items-center gap-2">
+          <span class="text-emerald-600 text-xl">📲</span>
+          <div>
+            <h3 class="font-display font-black text-sm sm:text-base text-slate-900">Datos para tu Pedido WhatsApp</h3>
+            <p class="text-[11px] text-slate-500">Completá tus datos para generar el mensaje directo.</p>
+          </div>
+        </div>
+        <button id="closeCheckoutBtn" class="w-8 h-8 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Checkout Form -->
+      <form id="checkoutForm" class="p-4 sm:p-6 overflow-y-auto space-y-4 text-xs flex-1">
+        
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">Nombre Completo *</label>
+          <input 
+            type="text" 
+            id="customerNameInput" 
+            required 
+            placeholder="Ej: Lic. Carolina Martínez" 
+            class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25 focus:border-[#FF2D8A]"
+          />
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">Número de WhatsApp (Paraguay) *</label>
+          <input 
+            type="tel" 
+            id="customerPhoneInput" 
+            required 
+            placeholder="Ej: 0981 123 456" 
+            class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25 focus:border-[#FF2D8A]"
+          />
+        </div>
+
+        <!-- Delivery Option Selector -->
+        <div>
+          <label class="block font-bold text-slate-700 mb-1.5">Método de Entrega *</label>
+          <div class="grid grid-cols-2 gap-2">
+            <label class="delivery-option-card flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer hover:border-[#FF2D8A]">
+              <input type="radio" name="deliveryChoice" value="delivery" checked class="text-[#FF2D8A] focus:ring-[#FF2D8A]">
+              <div>
+                <span class="font-bold text-slate-800 block text-xs">🛵 Envío a Domicilio</span>
+                <span class="text-[10px] text-slate-400">Asunción y Gran Asunción</span>
+              </div>
+            </label>
+
+            <label class="delivery-option-card flex items-center gap-2 p-2.5 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer hover:border-[#FF2D8A]">
+              <input type="radio" name="deliveryChoice" value="pickup" class="text-[#FF2D8A] focus:ring-[#FF2D8A]">
+              <div>
+                <span class="font-bold text-slate-800 block text-xs">🏪 Retiro en Local</span>
+                <span class="text-[10px] text-slate-400">Gratis (Asunción)</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <!-- Address Field -->
+        <div id="addressFieldContainer">
+          <label class="block font-bold text-slate-700 mb-1">Dirección de Entrega / Ciudad *</label>
+          <input 
+            type="text" 
+            id="customerAddressInput" 
+            placeholder="Ej: Av. Santa Teresa 1520 c/ Denis Roa, Asunción" 
+            class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25 focus:border-[#FF2D8A]"
+          />
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">Forma de Pago Prevista *</label>
+          <select id="customerPaymentInput" class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700">
+            <option value="Transferencia Bancaria / SIPAP">Transferencia Bancaria (SIPAP)</option>
+            <option value="Efectivo contra Entrega">Efectivo contra entrega (Asunción)</option>
+            <option value="Billetera Electrónica / Tigo Money">Billetera Electrónica / Tigo Money</option>
+            <option value="Tarjeta de Débito / Crédito">Tarjeta de Débito / Crédito (POS)</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">Notas u Observaciones (Opcional)</label>
+          <textarea 
+            id="customerNotesInput" 
+            rows="2" 
+            placeholder="Ej: Timbre blanco en portón, o pedir en guardia de enfermería..." 
+            class="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25"
+          ></textarea>
+        </div>
+
+        <!-- Order Summary Breakdown -->
+        <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-1.5 font-medium text-xs">
+          <div class="flex justify-between text-slate-600">
+            <span>Subtotal de pins:</span>
+            <span id="checkoutSubtotalText" class="font-bold text-slate-800">Gs. 0</span>
+          </div>
+          <div class="flex justify-between text-slate-600">
+            <span>Costo de envío:</span>
+            <span id="checkoutDeliveryText" class="font-bold text-slate-800">Gs. 15.000</span>
+          </div>
+          <div class="flex justify-between pt-2 border-t border-slate-200 font-display font-black text-sm text-[#111111]">
+            <span>Total a Pagar:</span>
+            <span id="checkoutTotalText" class="text-base text-[#FF2D8A]">Gs. 0</span>
+          </div>
+        </div>
+
+        <!-- Submit Button -->
+        <button 
+          type="submit" 
+          class="btn-pinpop-whatsapp w-full py-3.5 rounded-2xl font-black text-sm flex items-center justify-center gap-2 shadow-md transition-all active:scale-95"
+        >
+          <i data-lucide="send" class="w-4 h-4"></i>
+          <span>Enviar Pedido a WhatsApp</span>
+        </button>
+
+      </form>
+
+    </div>
+  </div>
+
+  <!-- Order Success Modal -->
+  <div id="orderSuccessModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 overflow-hidden text-center p-6 space-y-4 my-auto">
+      <div class="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto text-3xl">
+        🎉
+      </div>
+      <div>
+        <h3 class="font-display font-black text-lg text-slate-900">¡Pedido Enviado a WhatsApp!</h3>
+        <p class="text-xs text-slate-500 mt-1">
+          Código de Pedido: <strong id="successOrderCode" class="text-[#FF2D8A] font-mono font-black">#0000</strong>
+        </p>
+      </div>
+
+      <p class="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200 text-left leading-relaxed">
+        Se abrió WhatsApp para enviar el detalle de tu pedido a nuestro equipo. Si no se abrió automáticamente, tocá el botón verde abajo.
+      </p>
+
+      <div class="space-y-2">
+        <a 
+          id="manualWhatsAppLink" 
+          href="#" 
+          target="_blank" 
+          class="btn-pinpop-whatsapp w-full py-3 rounded-xl font-black text-xs flex items-center justify-center gap-2"
+        >
+          <i data-lucide="message-circle" class="w-4 h-4"></i>
+          <span>Abrir WhatsApp Manualmente</span>
+        </a>
+        <button 
+          id="closeSuccessModalBtn" 
+          class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl"
+        >
+          Continuar mirando el catálogo
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- ADMIN MODAL (LOGIN GATE + CONTROL PANEL + ERP) -->
+  <!-- ======================================================== -->
+  <div id="adminModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-6 overflow-y-auto">
+    <div class="bg-white w-full max-w-5xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[94vh]">
+      
+      <!-- Top Bar with Official Logo -->
+      <div class="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-900 text-white shrink-0">
+        <div class="flex items-center gap-2.5">
+          <img src="images/brand/pinpop-logo-web.png" onerror="this.src='/images/brand/pinpop-logo-web.png'" class="h-8 w-auto object-contain">
+          <span class="font-display font-black text-xs sm:text-sm text-white">| Panel de Administración</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="adminLogoutBtn" class="hidden px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-lg text-slate-300 hover:text-white flex items-center gap-1">
+            <i data-lucide="log-out" class="w-3 h-3"></i>
+            <span>Cerrar Sesión</span>
+          </button>
+          <button id="closeAdminBtn" class="w-7 h-7 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition-colors">
+            <i data-lucide="x" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Auth Gate (Shown if not logged in) -->
+      <div id="adminLoginGate" class="p-8 max-w-sm mx-auto w-full my-auto text-center space-y-4">
+        <img src="images/brand/pinpop-logo-web.png" onerror="this.src='/images/brand/pinpop-logo-web.png'" class="h-12 w-auto object-contain mx-auto">
+        <div>
+          <h3 class="font-display font-black text-lg text-slate-900">Acceso Administrativo</h3>
+          <p class="text-xs text-slate-500 mt-1">Ingresá la contraseña protegida con autenticación Bearer JWT.</p>
+        </div>
+        <form id="adminLoginForm" class="space-y-3">
+          <input 
+            type="password" 
+            id="adminPasswordInput" 
+            required 
+            placeholder="Contraseña de administrador"
+            class="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25 focus:border-[#FF2D8A]"
+          />
+          <button 
+            type="submit" 
+            class="btn-pinpop-primary w-full py-2.5 font-black text-xs rounded-xl shadow"
+          >
+            Ingresar al Panel
+          </button>
+        </form>
+      </div>
+
+      <!-- Admin Panel Content (Protected) -->
+      <div id="adminContentSection" class="hidden flex-1 overflow-y-auto flex flex-col">
+        
+        <!-- Navigation Tabs -->
+        <div class="bg-slate-100 border-b border-slate-200 px-4 flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
+          <button class="admin-tab-btn active px-3.5 py-2.5 font-bold text-xs border-b-2 border-[#FF2D8A] text-[#FF2D8A] flex items-center gap-1.5" data-tab="dashboard">
+            <i data-lucide="layout-dashboard" class="w-3.5 h-3.5"></i>
+            <span>Dashboard & Métricas</span>
+          </button>
+          <button class="admin-tab-btn px-3.5 py-2.5 font-bold text-xs text-slate-600 hover:text-slate-900 flex items-center gap-1.5 relative" data-tab="orders">
+            <i data-lucide="message-square" class="w-3.5 h-3.5"></i>
+            <span>Pedidos WhatsApp</span>
+            <span id="pendingOrdersBadge" class="hidden px-1.5 py-0.2 bg-amber-500 text-white rounded-full text-[9px] font-black">0</span>
+          </button>
+          <button class="admin-tab-btn px-3.5 py-2.5 font-bold text-xs text-slate-600 hover:text-slate-900 flex items-center gap-1.5" data-tab="products">
+            <i data-lucide="boxes" class="w-3.5 h-3.5"></i>
+            <span>Productos</span>
+          </button>
+          <button class="admin-tab-btn px-3.5 py-2.5 font-bold text-xs text-slate-600 hover:text-slate-900 flex items-center gap-1.5" data-tab="movements">
+            <i data-lucide="history" class="w-3.5 h-3.5"></i>
+            <span>Historial / Auditoría</span>
+          </button>
+          <button class="admin-tab-btn px-3.5 py-2.5 font-bold text-xs text-slate-600 hover:text-slate-900 flex items-center gap-1.5" data-tab="settings">
+            <i data-lucide="settings" class="w-3.5 h-3.5"></i>
+            <span>Configuración</span>
+          </button>
+        </div>
+
+        <!-- Tab 1: Dashboard & Metrics -->
+        <div id="adminTabDashboard" class="admin-tab-content p-4 sm:p-6 space-y-6">
+          
+          <!-- Key Metrics Cards -->
+          <div class="grid grid-cols-2 md:grid-cols-6 gap-3">
+            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3.5">
+              <span class="text-[10px] font-bold text-slate-400 uppercase block">Modelos</span>
+              <p id="statTotalProducts" class="text-xl font-black text-slate-900 mt-1">0</p>
+              <span class="text-[10px] text-slate-500">en catálogo activo</span>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3.5">
+              <span class="text-[10px] font-bold text-slate-400 uppercase block">Stock Físico</span>
+              <p id="statTotalStockUnits" class="text-xl font-black text-emerald-600 mt-1">0 un</p>
+              <span class="text-[10px] text-slate-500">unidades disponibles</span>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3.5">
+              <span class="text-[10px] font-bold text-slate-400 uppercase block">Alertas Stock</span>
+              <p id="statLowStock" class="text-xl font-black text-amber-600 mt-1">0</p>
+              <span class="text-[10px] text-slate-500">pins con ≤ 3 un</span>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3.5">
+              <span class="text-[10px] font-bold text-slate-400 uppercase block">Agotados</span>
+              <p id="statOutOfStock" class="text-xl font-black text-rose-600 mt-1">0</p>
+              <span class="text-[10px] text-slate-500">sin unidades</span>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3.5">
+              <span class="text-[10px] font-bold text-slate-400 uppercase block">Valor Venta</span>
+              <p id="statRetailValue" class="text-base font-black text-[#FF2D8A] mt-1">Gs. 0</p>
+              <span class="text-[10px] text-slate-500">inventario total</span>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-3.5">
+              <span class="text-[10px] font-bold text-slate-400 uppercase block">Ganancia Bruta</span>
+              <p id="statPotentialProfit" class="text-base font-black text-emerald-600 mt-1">Gs. 0</p>
+              <span class="text-[10px] text-slate-500">margen potencial</span>
+            </div>
+          </div>
+
+          <!-- Conversion & Orders Funnel -->
+          <div class="bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+            <h4 class="font-display font-black text-sm text-slate-900 flex items-center gap-2">
+              <span>📊</span> Conversión Comercial y Pedidos
+            </h4>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div class="p-3 bg-slate-50 rounded-xl">
+                <span class="text-slate-400 font-bold block text-[10px] uppercase">Tasa de Conversión</span>
+                <span id="statConversionRate" class="text-lg font-black text-purple-600 mt-0.5 block">0%</span>
+                <span id="statConversionDetail" class="text-[10px] text-slate-500">0 confirmados</span>
+              </div>
+              <div class="p-3 bg-slate-50 rounded-xl">
+                <span class="text-slate-400 font-bold block text-[10px] uppercase">Ventas Cobradas</span>
+                <span id="statConfirmedRevenue" class="text-lg font-black text-emerald-600 mt-0.5 block">Gs. 0</span>
+                <span id="statConfirmedCount" class="text-[10px] text-slate-500">0 pedidos</span>
+              </div>
+              <div class="p-3 bg-slate-50 rounded-xl">
+                <span class="text-slate-400 font-bold block text-[10px] uppercase">Pedidos Entregados</span>
+                <span id="statDeliveredOrders" class="text-lg font-black text-blue-600 mt-0.5 block">0</span>
+                <span class="text-[10px] text-slate-500">despachos finalizados</span>
+              </div>
+              <div class="p-3 bg-slate-50 rounded-xl">
+                <span class="text-slate-400 font-bold block text-[10px] uppercase">Pendientes en WhatsApp</span>
+                <span id="statPendingOrders" class="text-lg font-black text-amber-600 mt-0.5 block">0</span>
+                <span class="text-[10px] text-slate-500">esperando confirmación</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- TOP 10 Best Sellers & Stock Alerts -->
+          <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+            <div class="md:col-span-7 bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+              <h4 class="font-display font-black text-sm text-slate-900 flex items-center gap-1.5">
+                <i data-lucide="flame" class="w-4 h-4 text-[#FF2D8A]"></i>
+                <span>TOP 10 Modelos Más Vendidos</span>
+              </h4>
+              <div id="topSellersList" class="space-y-2 max-h-72 overflow-y-auto pr-1">
+                <!-- Rendered by JS -->
+              </div>
+            </div>
+
+            <div class="md:col-span-5 bg-white rounded-2xl border border-slate-200 p-4 space-y-3">
+              <h4 class="font-display font-black text-sm text-slate-900 flex items-center gap-1.5">
+                <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-500"></i>
+                <span>Alertas de Reposición</span>
+              </h4>
+              <div id="adminStockAlertsList" class="space-y-2 max-h-72 overflow-y-auto text-xs divide-y divide-slate-100">
+                <!-- Rendered by JS -->
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Tab 2: Orders Management -->
+        <div id="adminTabOrders" class="admin-tab-content hidden p-4 sm:p-6 space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="font-display font-black text-base text-slate-900">Pedidos Recibidos por WhatsApp</h3>
+              <p class="text-xs text-slate-500">Revisá los comprobantes de pago de clientes para confirmar y descontar stock automáticamente.</p>
+            </div>
+          </div>
+
+          <div id="adminOrdersContainer" class="space-y-3">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+
+        <!-- ======================================================== -->
+        <!-- Tab 3: PRODUCTS MANAGEMENT (Sección 1 a 39 del documento) -->
+        <!-- ======================================================== -->
+        <div id="adminTabProducts" class="admin-tab-content hidden p-3 sm:p-6 space-y-4">
+          
+          <!-- Top Controls & Actions -->
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3 bg-slate-50 p-3 sm:p-4 rounded-2xl border border-slate-200/80">
+            
+            <!-- Search & Filters -->
+            <div class="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1">
+              <div class="relative flex-1 max-w-md">
+                <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                <input 
+                  type="text" 
+                  id="adminSearchInput" 
+                  placeholder="🔎 Buscar por nombre, SKU o categoría..."
+                  class="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/30 focus:border-[#FF2D8A]"
+                />
+              </div>
+
+              <!-- Line filter (Crocs vs Esteto vs All) -->
+              <select id="adminLineFilter" class="px-3 py-2 text-xs font-bold bg-white border border-slate-200 rounded-xl text-slate-700">
+                <option value="all">Todas las líneas</option>
+                <option value="crocs">🐊 Pins para Crocs</option>
+                <option value="estetoscopio">🩺 Pins para Estetoscopio</option>
+              </select>
+
+              <!-- Sorting dropdown -->
+              <select id="adminSortSelect" class="px-3 py-2 text-xs font-bold bg-white border border-slate-200 rounded-xl text-slate-700">
+                <option value="recent">Más recientes</option>
+                <option value="name_asc">Nombre (A-Z)</option>
+                <option value="price_asc">Precio: Menor a Mayor</option>
+                <option value="price_desc">Precio: Mayor a Menor</option>
+                <option value="stock_desc">Mayor Stock</option>
+                <option value="stock_asc">Menor Stock</option>
+                <option value="sales_desc">Más Vendidos</option>
+              </select>
+            </div>
+
+            <!-- Primary Action Buttons -->
+            <div class="flex items-center gap-2 shrink-0">
+              <button 
+                id="openCategoryManagerBtn"
+                class="px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-xl border border-slate-200 flex items-center gap-1.5 transition-all shadow-xs"
+              >
+                <i data-lucide="tag" class="w-3.5 h-3.5 text-[#FF2D8A]"></i>
+                <span>Categorías</span>
+              </button>
+
+              <button 
+                id="openCreateProductModalBtn"
+                class="btn-pinpop-primary px-4 py-2 font-black text-xs rounded-xl shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <i data-lucide="plus-circle" class="w-4 h-4"></i>
+                <span>+ Nuevo Producto</span>
+              </button>
+            </div>
+
+          </div>
+
+          <!-- Quick Status Filter Chips (Section 28) -->
+          <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+            <button class="admin-status-chip px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-[#111111] text-white shadow-xs cursor-pointer" data-status="all">
+              Todos (<span id="countStatusAll">0</span>)
+            </button>
+            <button class="admin-status-chip px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 cursor-pointer" data-status="active">
+              🟢 Activos (<span id="countStatusActive">0</span>)
+            </button>
+            <button class="admin-status-chip px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 cursor-pointer" data-status="low">
+              🟡 Stock bajo (<span id="countStatusLow">0</span>)
+            </button>
+            <button class="admin-status-chip px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 cursor-pointer" data-status="out">
+              🔴 Agotados (<span id="countStatusOut">0</span>)
+            </button>
+            <button class="admin-status-chip px-3 py-1.5 rounded-xl text-xs font-bold transition-all bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 cursor-pointer" data-status="inactive">
+              ⚪ Inactivos (<span id="countStatusInactive">0</span>)
+            </button>
+          </div>
+
+          <!-- Products Results Counter -->
+          <div class="flex items-center justify-between text-xs text-slate-500 px-1">
+            <span id="adminProductsCountLabel" class="font-bold">Cargando catálogo...</span>
+          </div>
+
+          <!-- Products Container (Cards on Mobile, Table on Desktop) -->
+          <div id="adminProductsContainer">
+            <!-- Mobile Cards List -->
+            <div id="adminProductsMobileList" class="block sm:hidden space-y-2.5">
+              <!-- Rendered by JS -->
+            </div>
+
+            <!-- Desktop Table View -->
+            <div id="adminProductsDesktopTable" class="hidden sm:block border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs">
+              <div class="overflow-x-auto">
+                <table class="w-full text-xs text-left">
+                  <thead class="bg-slate-50 text-slate-500 uppercase font-black text-[9px] border-b border-slate-200">
+                    <tr>
+                      <th class="p-2.5">Foto</th>
+                      <th class="p-2.5">SKU</th>
+                      <th class="p-2.5">Línea / Producto</th>
+                      <th class="p-2.5">Precio Venta</th>
+                      <th class="p-2.5 text-center">Stock Físico</th>
+                      <th class="p-2.5 text-center">Estado</th>
+                      <th class="p-2.5 text-right">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="adminProductsTableBody" class="divide-y divide-slate-100">
+                    <!-- Rendered by JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Tab 4: Stock Movements Audit -->
+        <div id="adminTabMovements" class="admin-tab-content hidden p-4 sm:p-6 space-y-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <h3 class="font-display font-black text-base text-slate-900">Auditoría de Movimientos de Stock</h3>
+              <p class="text-xs text-slate-500">Historial inmutable de cada Entrada, Venta, Ajuste o Estorno registrado.</p>
+            </div>
+            <button id="refreshMovementsBtn" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl flex items-center gap-1">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              <span>Actualizar</span>
+            </button>
+          </div>
+
+          <div class="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs">
+            <div class="overflow-x-auto">
+              <table class="w-full text-xs text-left">
+                <thead class="bg-slate-50 text-slate-500 uppercase font-black text-[9px] border-b border-slate-200">
+                  <tr>
+                    <th class="p-2.5">Fecha</th>
+                    <th class="p-2.5">Tipo</th>
+                    <th class="p-2.5">Producto</th>
+                    <th class="p-2.5 text-center">Cantidad</th>
+                    <th class="p-2.5 text-center">Stock Anterior → Nuevo</th>
+                    <th class="p-2.5">Motivo / Pedido</th>
+                  </tr>
+                </thead>
+                <tbody id="adminMovementsTableBody" class="divide-y divide-slate-100 text-slate-700 font-mono text-[11px]">
+                  <!-- Rendered by JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 5: Settings -->
+        <div id="adminTabSettings" class="admin-tab-content hidden p-4 sm:p-6 space-y-6 max-w-2xl">
+          <form id="adminSettingsForm" class="space-y-4">
+            <h4 class="font-display font-black text-sm text-slate-900 border-b border-slate-100 pb-2">
+              Configuración de la Tienda
+            </h4>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Nombre Comercial de la Tienda</label>
+              <input type="text" id="settingStoreName" class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl" />
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Eslogan / Subtítulo</label>
+              <input type="text" id="settingTagline" class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl" />
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Número de WhatsApp Receptor (con código de país sin +)</label>
+              <input type="text" id="settingWhatsapp" class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-mono" />
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Costo Fijo de Envío (Gs.)</label>
+                <input type="number" id="settingDeliveryFee" class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl" />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Envío Gratis desde (Gs.)</label>
+                <input type="number" id="settingFreeThreshold" class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl" />
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Texto de la Barra Superior Promocional</label>
+              <input type="text" id="settingPromoBanner" class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl" />
+            </div>
+
+            <button type="submit" class="btn-pinpop-primary px-4 py-2 font-black text-xs rounded-xl shadow">
+              Guardar Configuración
+            </button>
+          </form>
+
+          <!-- Password Change Section -->
+          <div class="border-t border-slate-200 pt-6">
+            <h4 class="font-display font-black text-sm text-slate-900 mb-2">
+              Seguridad: Cambiar Contraseña Administrativa
+            </h4>
+            <form id="adminChangePasswordForm" class="space-y-3">
+              <input 
+                type="password" 
+                id="adminNewPasswordInput" 
+                required 
+                placeholder="Nueva contraseña (mínimo 6 caracteres)"
+                class="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
+              />
+              <button type="submit" class="btn-pinpop-dark px-4 py-2 font-bold text-xs rounded-xl shadow">
+                Actualizar Contraseña
+              </button>
+            </form>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: CREAR / EDITAR PRODUCTO (Mobile-First Fast Add) -->
+  <!-- ======================================================== -->
+  <div id="productFormModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 overflow-y-auto">
+    <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 overflow-hidden my-auto max-h-[96vh] flex flex-col">
+      
+      <!-- Modal Header -->
+      <div class="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50 shrink-0">
+        <div class="flex items-center gap-2">
+          <span class="w-2.5 h-2.5 rounded-full bg-[#FF2D8A]"></span>
+          <h3 id="productFormModalTitle" class="font-display font-black text-sm sm:text-base text-slate-900">Nuevo Producto</h3>
+        </div>
+        <button id="closeProductFormModalBtn" class="w-8 h-8 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center transition-colors">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Scrollable Form Body -->
+      <form id="productAdminForm" class="p-4 sm:p-5 overflow-y-auto space-y-4 text-xs flex-1">
+        <input type="hidden" id="editProductId" />
+        <input type="hidden" id="pinImageInput" />
+
+        <!-- 1. FOTO PRINCIPAL: CÁMARA DIRECTA O GALERÍA (Secciones 4, 5, 6, 7, 8) -->
+        <div class="space-y-2">
+          <label class="block font-black text-slate-800 text-xs">
+            Foto Principal del Producto *
+          </label>
+
+          <!-- Hidden inputs for Camera and Gallery -->
+          <input type="file" id="prodCameraInput" accept="image/*" capture="environment" class="hidden" />
+          <input type="file" id="prodGalleryInput" accept="image/*" class="hidden" />
+
+          <!-- Two big touch-friendly buttons for mobile -->
+          <div class="grid grid-cols-2 gap-2">
+            <button 
+              type="button" 
+              id="btnTriggerCamera"
+              class="py-3 px-3 bg-[#FF2D8A] hover:bg-[#E01E75] active:scale-95 text-white font-extrabold rounded-2xl flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+            >
+              <i data-lucide="camera" class="w-4 h-4"></i>
+              <span>📸 Tomar foto</span>
+            </button>
+            <button 
+              type="button" 
+              id="btnTriggerGallery"
+              class="py-3 px-3 bg-white hover:bg-slate-100 active:scale-95 text-slate-800 font-extrabold rounded-2xl border border-slate-200 flex items-center justify-center gap-2 transition-all shadow-xs cursor-pointer"
+            >
+              <i data-lucide="image" class="w-4 h-4 text-slate-500"></i>
+              <span>🖼️ De galería</span>
+            </button>
+          </div>
+
+          <!-- Immediate Photo Preview Container (Section 5) -->
+          <div id="prodImagePreviewContainer" class="hidden relative bg-slate-50 rounded-2xl border border-slate-200 p-3 flex items-center gap-3">
+            <div class="w-20 h-20 rounded-xl bg-white border border-slate-200 overflow-hidden flex items-center justify-center shrink-0 p-1">
+              <img id="prodImagePreviewImg" src="" alt="Preview" class="w-full h-full object-contain filter drop-shadow-xs" />
+            </div>
+            <div class="flex-1 min-w-0 space-y-1">
+              <div id="imageUploadStatus" class="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                <span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span>Foto lista</span>
+              </div>
+              <p id="imageMetaText" class="text-[10px] text-slate-400 truncate">Optimizada para web</p>
+              
+              <div class="flex items-center gap-2 pt-1">
+                <button type="button" id="btnChangePhoto" class="px-2 py-1 bg-white hover:bg-slate-100 text-slate-700 font-bold text-[10px] rounded-lg border border-slate-200 flex items-center gap-1">
+                  <i data-lucide="refresh-cw" class="w-3 h-3"></i> Cambiar
+                </button>
+                <button type="button" id="btnRemovePhoto" class="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-[10px] rounded-lg border border-rose-200 flex items-center gap-1">
+                  <i data-lucide="trash-2" class="w-3 h-3"></i> Eliminar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. VISTA PREVIA EN VIVO DEL CARD (Sección 22) -->
+        <div class="bg-[#F4F5F7] p-3 rounded-2xl border border-slate-200/80 space-y-2">
+          <div class="flex items-center justify-between text-[10px] font-black uppercase text-slate-400">
+            <span>Vista previa del Card (Cómo se verá en la tienda)</span>
+            <span class="text-[#FF2D8A]">Live Mockup</span>
+          </div>
+          <div class="max-w-[200px] mx-auto bg-white rounded-2xl border border-slate-200 p-2.5 shadow-xs space-y-2 pointer-events-none">
+            <div class="aspect-square bg-slate-50 rounded-xl flex items-center justify-center p-2 border border-slate-100">
+              <img id="mockupCardImg" src="images/pins/estetoscopio-pin.png" class="w-full h-full object-contain">
+            </div>
+            <div>
+              <span id="mockupCardCategory" class="text-[9px] font-black text-[#FF2D8A] uppercase">Personajes</span>
+              <h4 id="mockupCardName" class="font-bold text-slate-900 text-xs truncate">Nombre del Pin</h4>
+              <div class="mt-1 flex items-center justify-between">
+                <span id="mockupCardPrice" class="text-xs font-black text-slate-900">Gs. 0</span>
+                <span id="mockupCardStock" class="badge-disponible px-1.5 py-0.2 rounded-full text-[8px] font-bold">🟢 Disp.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. CAMPOS ESENCIALES (Sección 2) -->
+        <div class="space-y-3">
+          <!-- Nombre del producto -->
+          <div>
+            <label class="block font-black text-slate-800 mb-1">Nombre del Producto *</label>
+            <input 
+              type="text" 
+              id="pinNameInput" 
+              required 
+              placeholder="Ej: Stitch Azul, EKG Corazón..." 
+              class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/30 focus:border-[#FF2D8A]"
+            />
+          </div>
+
+          <!-- Línea & Categoría -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block font-black text-slate-800 mb-1">Línea del Producto *</label>
+              <select id="pinTargetTypeInput" class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-[#FF2D8A]">
+                <option value="crocs">🐊 Pins para Crocs</option>
+                <option value="estetoscopio">🩺 Pins para Estetoscopio</option>
+              </select>
+            </div>
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label class="block font-black text-slate-800">Categoría *</label>
+                <button type="button" id="btnQuickAddCategory" class="text-[10px] font-bold text-[#FF2D8A] hover:underline flex items-center gap-0.5">
+                  <span>+ Nueva</span>
+                </button>
+              </div>
+              <select id="pinCategoryInput" required class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800">
+                <!-- Populated dynamically -->
+              </select>
+            </div>
+          </div>
+
+          <!-- Precio & Stock Inicial -->
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block font-black text-slate-800 mb-1">Precio Venta (Gs.) *</label>
+              <input 
+                type="number" 
+                id="pinPriceInput" 
+                required 
+                min="0" 
+                step="500" 
+                placeholder="15000" 
+                class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/30"
+              />
+              <span id="pinPriceFormattedLabel" class="text-[10px] text-slate-400 font-mono mt-0.5 block">Gs. 0</span>
+            </div>
+
+            <div>
+              <label class="block font-black text-slate-800 mb-1">Stock Físico Inicial *</label>
+              <div class="flex items-center gap-1">
+                <input 
+                  type="number" 
+                  id="pinStockInput" 
+                  required 
+                  min="0" 
+                  value="10" 
+                  class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-emerald-700 text-center focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/30"
+                />
+              </div>
+              <div class="flex items-center gap-1 mt-1">
+                <button type="button" class="btn-stock-quick-add px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold" data-val="5">+5</button>
+                <button type="button" class="btn-stock-quick-add px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold" data-val="10">+10</button>
+                <button type="button" class="btn-stock-quick-add px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold" data-val="20">+20</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. ACORDEÓN "MÁS OPCIONES" (Sección 3) -->
+        <div class="border border-slate-200 rounded-2xl overflow-hidden bg-white">
+          <button 
+            type="button" 
+            id="btnToggleMoreOptions"
+            class="w-full p-3 bg-slate-50 hover:bg-slate-100 flex items-center justify-between text-left font-bold text-slate-700 transition-colors"
+          >
+            <span class="flex items-center gap-1.5">
+              <i data-lucide="sliders" class="w-3.5 h-3.5 text-[#FF2D8A]"></i>
+              <span>Más opciones (Descripción, SKU, Promo, Costo...)</span>
+            </span>
+            <i data-lucide="chevron-down" id="moreOptionsChevron" class="w-4 h-4 text-slate-400 transition-transform"></i>
+          </button>
+
+          <div id="moreOptionsContent" class="hidden p-3.5 space-y-3 bg-white border-t border-slate-100">
+            <!-- SKU con Generación Automática -->
+            <div>
+              <div class="flex items-center justify-between mb-1">
+                <label class="block font-bold text-slate-700">Código SKU</label>
+                <button type="button" id="btnAutoGenerateSku" class="text-[10px] font-bold text-[#FF2D8A] hover:underline flex items-center gap-0.5">
+                  <i data-lucide="zap" class="w-3 h-3"></i>
+                  <span>Generar automático</span>
+                </button>
+              </div>
+              <input 
+                type="text" 
+                id="pinSkuInput" 
+                placeholder="Ej: PER-105 (dejar vacío para auto)" 
+                class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl font-mono uppercase text-xs"
+              />
+            </div>
+
+            <!-- Precio Promo & Costo -->
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Precio Promo (Gs.)</label>
+                <input type="number" id="pinPromoPriceInput" min="0" placeholder="Ej: 12000" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl" />
+              </div>
+              <div>
+                <label class="block font-bold text-rose-700 mb-1">Costo Privado (Gs.)</label>
+                <input type="number" id="pinCostPriceInput" min="0" placeholder="Ej: 4000" class="w-full px-3 py-2 bg-rose-50 border border-rose-200 rounded-xl font-mono" />
+              </div>
+            </div>
+
+            <!-- Stock Mínimo & Badge -->
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Alerta Stock Mínimo</label>
+                <input type="number" id="pinMinStockInput" min="1" value="3" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl" />
+              </div>
+              <div>
+                <label class="block font-bold text-slate-700 mb-1">Badge / Etiqueta</label>
+                <input type="text" id="pinBadgeInput" placeholder="Nuevo, Oferta, Top" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl" />
+              </div>
+            </div>
+
+            <!-- Descripción -->
+            <div>
+              <label class="block font-bold text-slate-700 mb-1">Descripción Comercial</label>
+              <textarea id="pinDescriptionInput" rows="2" placeholder="Detalles, material, compatibilidad..." class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></textarea>
+            </div>
+
+            <!-- Destacado & Estado -->
+            <div class="flex items-center justify-between pt-1 border-t border-slate-100">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" id="pinFeaturedInput" class="w-4 h-4 rounded text-[#FF2D8A] focus:ring-[#FF2D8A]">
+                <span class="font-bold text-slate-800">⭐ Producto Destacado</span>
+              </label>
+
+              <select id="pinActiveInput" class="px-2 py-1 text-xs font-bold rounded-lg border border-slate-200 bg-slate-50">
+                <option value="1">🟢 Activo</option>
+                <option value="0">⚪ Inactivo</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. CONTROLES DE LOTE (Sección 17) -->
+        <div class="bg-amber-50/70 p-3 rounded-2xl border border-amber-200/80 space-y-1.5 text-slate-700">
+          <span class="text-[10px] font-black uppercase text-amber-800 block">⚡ Cadastro Rápido en Lote:</span>
+          <label class="flex items-center gap-2 cursor-pointer text-xs">
+            <input type="checkbox" id="batchKeepCategory" checked class="w-3.5 h-3.5 rounded text-[#FF2D8A] focus:ring-[#FF2D8A]">
+            <span>Mantener <strong>categoría</strong> para el próximo producto</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer text-xs">
+            <input type="checkbox" id="batchKeepPrice" class="w-3.5 h-3.5 rounded text-[#FF2D8A] focus:ring-[#FF2D8A]">
+            <span>Mantener <strong>precio</strong> para el próximo producto</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer text-xs">
+            <input type="checkbox" id="batchKeepStock" class="w-3.5 h-3.5 rounded text-[#FF2D8A] focus:ring-[#FF2D8A]">
+            <span>Mantener <strong>stock inicial</strong> para el próximo producto</span>
+          </label>
+        </div>
+
+        <!-- 6. BOTONES DE ENVÍO (Sección 16) -->
+        <div class="space-y-2 pt-2 shrink-0">
+          <button 
+            type="button" 
+            id="btnSaveAndCreateAnother" 
+            class="w-full py-3.5 bg-[#FF2D8A] hover:bg-[#E01E75] active:scale-95 text-white font-black text-sm rounded-2xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
+          >
+            <i data-lucide="sparkles" class="w-4 h-4"></i>
+            <span>GUARDAR Y CREAR OTRO</span>
+          </button>
+
+          <button 
+            type="submit" 
+            id="btnSaveProduct" 
+            class="w-full py-2.5 bg-[#111111] hover:bg-black active:scale-95 text-white font-bold text-xs rounded-2xl transition-all cursor-pointer"
+          >
+            ✓ Guardar producto
+          </button>
+        </div>
+      </form>
+
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: AJUSTAR STOCK DEDICADO (Sección 24) -->
+  <!-- ======================================================== -->
+  <div id="stockAdjustModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 overflow-hidden my-auto flex flex-col">
+      
+      <div class="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <h3 class="font-display font-black text-sm sm:text-base text-slate-900 flex items-center gap-2">
+          <span>📦</span> Ajustar Stock de Producto
+        </h3>
+        <button id="closeStockAdjustModalBtn" class="w-7 h-7 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+
+      <form id="stockAdjustForm" class="p-4 sm:p-5 space-y-4 text-xs">
+        <input type="hidden" id="adjustProductId" />
+
+        <!-- Product Preview Header -->
+        <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200/80">
+          <div class="w-12 h-12 rounded-xl bg-white border border-slate-200 p-1 flex items-center justify-center shrink-0">
+            <img id="adjustProductImg" src="" class="w-full h-full object-contain">
+          </div>
+          <div class="min-w-0 flex-1">
+            <h4 id="adjustProductName" class="font-bold text-slate-900 text-sm truncate">Pin</h4>
+            <div class="flex items-center gap-2 mt-0.5">
+              <span id="adjustProductSku" class="font-mono text-[10px] text-slate-500 font-bold bg-slate-200 px-1.5 py-0.2 rounded">SKU</span>
+              <span id="adjustCurrentStockBadge" class="text-[11px] font-black text-emerald-700">Stock actual: 0 un</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mode selector: Entrada vs Salida vs Fijar -->
+        <div>
+          <label class="block font-bold text-slate-700 mb-1.5">Tipo de Movimiento *</label>
+          <div class="grid grid-cols-3 gap-1.5">
+            <button type="button" class="adjust-mode-btn py-2 text-center rounded-xl font-bold text-xs border border-emerald-600 bg-emerald-600 text-white shadow-xs cursor-pointer" data-mode="entrada">
+              + Entrada
+            </button>
+            <button type="button" class="adjust-mode-btn py-2 text-center rounded-xl font-bold text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 cursor-pointer" data-mode="salida">
+              − Salida
+            </button>
+            <button type="button" class="adjust-mode-btn py-2 text-center rounded-xl font-bold text-xs border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 cursor-pointer" data-mode="fijo">
+              Nueva Cantidad
+            </button>
+          </div>
+        </div>
+
+        <!-- Quantity input & chips -->
+        <div>
+          <label id="adjustQuantityLabel" class="block font-bold text-slate-700 mb-1">Cantidad a ingresar *</label>
+          <input 
+            type="number" 
+            id="adjustQuantityInput" 
+            required 
+            min="1" 
+            value="10" 
+            class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-slate-900 text-center text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/30"
+          />
+          <div class="flex items-center justify-center gap-1.5 mt-1.5">
+            <button type="button" class="btn-adjust-chip px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold" data-val="1">+1</button>
+            <button type="button" class="btn-adjust-chip px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold" data-val="5">+5</button>
+            <button type="button" class="btn-adjust-chip px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold" data-val="10">+10</button>
+            <button type="button" class="btn-adjust-chip px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold" data-val="25">+25</button>
+            <button type="button" class="btn-adjust-chip px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold" data-val="50">+50</button>
+          </div>
+        </div>
+
+        <!-- Projected Stock Result -->
+        <div class="p-2.5 bg-slate-100 rounded-xl text-center font-bold text-slate-800 text-xs">
+          Stock resultante: <span id="adjustResultText" class="font-black text-[#FF2D8A]">0 → 0 un</span>
+        </div>
+
+        <!-- Mandatory Reason Select -->
+        <div>
+          <label class="block font-bold text-slate-700 mb-1">Motivo del Ajuste *</label>
+          <select id="adjustReasonSelect" required class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800">
+            <option value="Compra proveedor">Compra proveedor</option>
+            <option value="Ajuste inventario">Ajuste inventario</option>
+            <option value="Producto dañado">Producto dañado / roto</option>
+            <option value="Devolución">Devolución de cliente</option>
+            <option value="Otro">Otro motivo</option>
+          </select>
+        </div>
+
+        <div id="adjustCustomReasonContainer" class="hidden">
+          <label class="block font-bold text-slate-700 mb-1">Detalle del Motivo</label>
+          <input type="text" id="adjustCustomReasonInput" placeholder="Explicación del ajuste..." class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs" />
+        </div>
+
+        <button type="submit" class="btn-pinpop-primary w-full py-2.5 font-black text-xs rounded-xl shadow flex items-center justify-center gap-1.5 cursor-pointer">
+          <i data-lucide="check" class="w-4 h-4"></i>
+          <span>Confirmar Ajuste de Stock</span>
+        </button>
+      </form>
+
+    </div>
+  </div>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: GESTIÓN DE CATEGORÍAS (Sección 30) -->
+  <!-- ======================================================== -->
+  <div id="categoryManagerModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+    <div class="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 overflow-hidden my-auto flex flex-col">
+      
+      <div class="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+        <h3 class="font-display font-black text-sm sm:text-base text-slate-900 flex items-center gap-1.5">
+          <i data-lucide="tags" class="w-4 h-4 text-[#FF2D8A]"></i>
+          <span>Gestión de Categorías</span>
+        </h3>
+        <button id="closeCategoryManagerModalBtn" class="w-7 h-7 rounded-full bg-slate-200 hover:bg-slate-300 text-slate-600 flex items-center justify-center">
+          <i data-lucide="x" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+
+      <div class="p-4 sm:p-5 space-y-4 text-xs">
+        <!-- New Category Form -->
+        <form id="newCategoryForm" class="p-3 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
+          <span class="font-black text-slate-800 text-[11px] block">+ Crear Nueva Categoría</span>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input 
+              type="text" 
+              id="newCatNameInput" 
+              required 
+              placeholder="Ej: Anime, Kawaii..." 
+              class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-slate-800"
+            />
+            <select id="newCatLineInput" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl font-bold text-[#FF2D8A]">
+              <option value="crocs">🐊 Para Crocs</option>
+              <option value="estetoscopio">🩺 Para Esteto</option>
+            </select>
+          </div>
+          <button type="submit" class="btn-pinpop-primary w-full py-2 font-black text-xs rounded-xl shadow cursor-pointer">
+            + Guardar Categoría
+          </button>
+        </form>
+
+        <!-- Existing Categories List -->
+        <div>
+          <span class="font-black text-slate-400 uppercase text-[10px] block mb-2">Categorías Activas</span>
+          <div id="adminCategoriesList" class="max-h-56 overflow-y-auto space-y-1.5 pr-1">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- Footer with Legal & Official Brand Logo -->
+  <footer class="mt-auto bg-white border-t border-slate-200 py-8 px-4 text-center text-xs text-slate-500 space-y-3">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-2">
+        <img src="images/brand/pinpop-logo-web.png" onerror="this.src='/images/brand/pinpop-logo-web.png'" class="h-9 sm:h-10 w-auto object-contain">
+        <span class="text-slate-400 font-bold">| Asunción, Paraguay 🇵🇾</span>
+      </div>
+      <p class="text-[11px] text-slate-400">
+        Pins, charms y dijes compatibles para calzados y estetoscopios clínicos. Pedidos directos vía WhatsApp.
+      </p>
+      <div class="flex items-center gap-3 text-slate-400">
+        <span class="font-mono text-[10px]">PINPOP v3.2</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Application Logic -->
+  <script src="app.js"></script>
+</body>
+</html>

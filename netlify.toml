@@ -1,0 +1,15 @@
+[build]
+  publish = "public"
+  command = "echo PINPOP Netlify build"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+  external_node_modules = ["express", "serverless-http", "sql.js", "pg", "bcryptjs", "jsonwebtoken", "multer", "helmet", "express-rate-limit", "cors", "@supabase/supabase-js"]
+  included_files = ["data/**", "schema.sql", "node_modules/sql.js/dist/sql-wasm.wasm"]
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true

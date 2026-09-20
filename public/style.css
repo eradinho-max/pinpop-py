@@ -1,0 +1,272 @@
+/* ====================================================================
+   PINPOP • Identidad Visual Oficial (Manual de Marca)
+   Paleta: #FF2D8A (Rosa), #111111 (Preto), #FFE8F1 (Rosa Claro),
+           #A7E8D4 (Verde Menta), #FFD84D (Amarelo), #F4F5F7 (Cinza Fundo)
+   Tipografía: Poppins (Principal) & Sora (Display/Títulos)
+   ==================================================================== */
+
+:root {
+  --pinpop-pink: #FF2D8A;
+  --pinpop-pink-hover: #E01E75;
+  --pinpop-black: #111111;
+  --pinpop-lightpink: #FFE8F1;
+  --pinpop-mint: #A7E8D4;
+  --pinpop-yellow: #FFD84D;
+  --pinpop-bg: #F4F5F7;
+}
+
+body {
+  font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--pinpop-bg);
+  color: var(--pinpop-black);
+}
+
+.font-sora,
+.font-display {
+  font-family: 'Sora', 'Poppins', sans-serif;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+::-webkit-scrollbar-thumb {
+  background: #fbcfe8;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--pinpop-pink);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Brand Buttons */
+.btn-pinpop-primary {
+  background-color: var(--pinpop-pink);
+  color: #ffffff;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.btn-pinpop-primary:hover {
+  background-color: var(--pinpop-pink-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 16px -4px rgba(255, 45, 138, 0.35);
+}
+.btn-pinpop-primary:active {
+  transform: scale(0.97);
+}
+
+.btn-pinpop-whatsapp {
+  border: 2px solid var(--pinpop-pink);
+  background-color: #ffffff;
+  color: var(--pinpop-pink);
+  transition: all 0.2s ease;
+}
+.btn-pinpop-whatsapp:hover {
+  background-color: var(--pinpop-lightpink);
+  box-shadow: 0 4px 12px rgba(255, 45, 138, 0.2);
+}
+
+.btn-pinpop-dark {
+  background-color: var(--pinpop-black);
+  color: #ffffff;
+  transition: all 0.2s ease;
+}
+.btn-pinpop-dark:hover {
+  background-color: #262626;
+  box-shadow: 0 6px 14px rgba(17, 17, 17, 0.25);
+}
+
+/* Product Card Styling */
+.product-card {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+}
+
+.product-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 28px -10px rgba(255, 45, 138, 0.15), 0 4px 10px -2px rgba(0, 0, 0, 0.04);
+}
+
+/* Brand Badges */
+.badge-disponible {
+  background-color: rgba(167, 232, 212, 0.4);
+  color: #065f46;
+  border: 1px solid rgba(167, 232, 212, 0.9);
+}
+
+.badge-ultimas {
+  background-color: rgba(255, 216, 77, 0.35);
+  color: #78350f;
+  border: 1px solid rgba(255, 216, 77, 0.9);
+}
+
+.badge-agotado {
+  background-color: #ffe4e6;
+  color: #be123c;
+  border: 1px solid #fecdd3;
+}
+
+.badge-nuevo {
+  background-color: var(--pinpop-lightpink);
+  color: var(--pinpop-pink);
+  border: 1px solid rgba(255, 45, 138, 0.3);
+}
+
+.badge-oferta {
+  background-color: rgba(167, 232, 212, 0.5);
+  color: #115e59;
+  border: 1px solid rgba(167, 232, 212, 0.8);
+}
+
+/* ====================================================================
+   IMAGE ZOOM MAGNIFIER (Requerimiento de Zoom al Pasar el Mouse)
+   ==================================================================== */
+.zoom-container {
+  position: relative;
+  overflow: hidden;
+  cursor: zoom-in;
+  border-radius: 1.5rem;
+  background: #f8fafc;
+  user-select: none;
+}
+
+.zoom-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transition: transform 0.12s ease-out;
+  transform-origin: center center;
+  will-change: transform, transform-origin;
+}
+
+.zoom-container.zoomed .zoom-image {
+  cursor: crosshair;
+}
+
+.zoom-lens-indicator {
+  position: absolute;
+  bottom: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(17, 17, 17, 0.75);
+  backdrop-filter: blur(4px);
+  color: #ffffff;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 20;
+}
+
+.zoom-container:hover .zoom-lens-indicator {
+  opacity: 0.2;
+}
+
+/* ====================================================================
+   SIMULADOR DE CROCS & ESTETOSCOPIO
+   ==================================================================== */
+.clog-hole-slot {
+  position: absolute;
+  width: 32px;
+  height: 32px;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.clog-hole-slot:hover {
+  transform: translate(-50%, -50%) scale(1.18);
+}
+
+.clog-hole-slot.empty {
+  border: 2px dashed rgba(255, 45, 138, 0.45);
+  background: rgba(255, 232, 241, 0.4);
+  box-shadow: 0 0 8px rgba(255, 45, 138, 0.2);
+}
+
+.clog-hole-slot.empty:hover {
+  border-color: var(--pinpop-pink);
+  background: rgba(255, 45, 138, 0.18);
+}
+
+.clog-hole-slot.occupied {
+  border: none;
+  background: transparent;
+}
+
+.clog-hole-slot img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.35));
+  transition: transform 0.15s ease;
+}
+
+.clog-hole-slot.occupied:hover img {
+  transform: scale(1.12);
+}
+
+/* Stethoscope tube charm clip slot */
+.steth-clip-slot {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 15;
+}
+
+.steth-clip-slot.empty {
+  border: 2px dashed rgba(167, 232, 212, 0.85);
+  background: rgba(167, 232, 212, 0.25);
+  box-shadow: 0 0 10px rgba(167, 232, 212, 0.3);
+}
+
+.steth-clip-slot.empty:hover {
+  border-color: #059669;
+  background: rgba(167, 232, 212, 0.45);
+  transform: translate(-50%, -50%) scale(1.15);
+}
+
+.steth-clip-slot.occupied img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
+  transition: transform 0.15s ease;
+}
+
+.steth-clip-slot.occupied:hover img {
+  transform: scale(1.15);
+}
+
+/* Animations */
+@keyframes soft-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+.animate-soft-pulse {
+  animation: soft-pulse 2.5s infinite ease-in-out;
+}

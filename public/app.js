@@ -97,8 +97,13 @@
 
     const initialProductId = new URLSearchParams(window.location.search).get('producto');
     if (initialProductId && products.some(p => p.id === initialProductId)) {
-      openProductDetailModal(initialProductId);
+      // Direct/SEO entry: show the product without creating an artificial
+      // history entry. Products opened from the catalog do push history.
+      openProductDetailModal(initialProductId, { pushHistory: false });
     }
+
+    // Mobile/tablet browser Back must navigate inside PINPOP first.
+    window.addEventListener('popstate', handleBrowserNavigation);
 
     if (window.location.hash === '#admin') {
       openAdminModal();
@@ -658,9 +663,28 @@
   }
 
   // --- PRODUCT DETAIL MODAL ---
-  function openProductDetailModal(productId) {
+  function openProductDetailModal(productId, { pushHistory = true } = {}) {
     const product = products.find(p => p.id === productId);
     if (!product) return;
+
+    // Treat the product modal as a real navigation step. This is essential on
+    // Android/iOS/tablets: the browser Back gesture/button should return to the
+    // catalog instead of leaving the site.
+    if (pushHistory) {
+      const url = new URL(window.location.href);
+      const alreadyCurrentProduct =
+        url.searchParams.get('producto') === productId &&
+        window.history.state?.pinpopView === 'product';
+
+      if (!alreadyCurrentProduct) {
+        url.searchParams.set('producto', productId);
+        window.history.pushState(
+          { pinpopView: 'product', productId },
+          '',
+          `${url.pathname}${url.search}${url.hash}`
+        );
+      }
+    }
 
     modalActiveProduct = product;
     modalSelectedQty = 1;
@@ -771,10 +795,45 @@
     refreshLucide();
   }
 
-  function closeProductDetailModal() {
+  function closeProductDetailModal({ fromHistory = false } = {}) {
     const modal = document.getElementById('productDetailModal');
     if (modal) modal.classList.add('hidden');
     modalActiveProduct = null;
+
+    if (fromHistory) return;
+
+    // If this product was opened from the catalog, consume only the product
+    // history entry. The user remains on PINPOP.
+    if (window.history.state?.pinpopView === 'product') {
+      window.history.back();
+      return;
+    }
+
+    // Direct product URL/SEO entry: closing the modal should clean the query
+    // without creating another history entry.
+    const url = new URL(window.location.href);
+    if (url.searchParams.has('producto')) {
+      url.searchParams.delete('producto');
+      window.history.replaceState(
+        window.history.state,
+        '',
+        `${url.pathname}${url.search}${url.hash}`
+      );
+    }
+  }
+
+  function handleBrowserNavigation() {
+    const productId = new URLSearchParams(window.location.search).get('producto');
+
+    if (productId && products.some(p => p.id === productId)) {
+      openProductDetailModal(productId, { pushHistory: false });
+      return;
+    }
+
+    const modal = document.getElementById('productDetailModal');
+    if (modal && !modal.classList.contains('hidden')) {
+      closeProductDetailModal({ fromHistory: true });
+    }
   }
 
   // --- CART SYSTEM ---

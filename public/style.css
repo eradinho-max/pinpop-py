@@ -272,3 +272,135 @@ body {
 .animate-soft-pulse {
   animation: soft-pulse 2.5s infinite ease-in-out;
 }
+
+
+/* =========================================================
+   ADMIN / 2FA RESPONSIVE LAYOUT
+   Keeps the first-login QR flow usable without browser zoom.
+   ========================================================= */
+#adminModal {
+  overscroll-behavior: contain;
+}
+
+#adminModal .admin-modal-shell {
+  max-height: calc(100dvh - 1rem);
+}
+
+#adminLoginGate {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  padding: clamp(0.75rem, 2.5vh, 2rem) 1rem;
+  scrollbar-width: thin;
+}
+
+#admin2faSetupSection {
+  width: 100%;
+  max-width: 24rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+#admin2faQrImage.admin-2fa-qr {
+  display: block;
+  width: min(11rem, 48vw);
+  height: auto;
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+}
+
+#admin2faQrImage.admin-2fa-qr.hidden {
+  display: none;
+}
+
+#admin2faManualKey {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+#admin2faSetupCodeInput {
+  min-height: 44px;
+  font-size: 16px;
+}
+
+#admin2faConfirmBtn,
+#admin2faRestartBtn {
+  min-height: 44px;
+}
+
+@media (max-width: 480px) {
+  #adminModal {
+    padding: 0.25rem !important;
+    align-items: stretch !important;
+  }
+
+  #adminModal .admin-modal-shell {
+    max-height: calc(100dvh - 0.5rem);
+    border-radius: 1rem;
+  }
+
+  #adminModal .admin-modal-topbar {
+    padding: 0.6rem 0.75rem !important;
+  }
+
+  #adminModal .admin-modal-topbar img {
+    height: 1.6rem !important;
+  }
+
+  #adminLoginGate {
+    max-width: none !important;
+    padding: 0.75rem !important;
+  }
+
+  #adminLoginGate > img {
+    height: 2rem !important;
+  }
+
+  #adminAuthTitle {
+    font-size: 1rem !important;
+  }
+
+  #adminAuthDescription {
+    font-size: 0.72rem !important;
+  }
+
+  #admin2faSetupSection {
+    gap: 0.5rem !important;
+  }
+
+  #admin2faSetupSection > div:first-child {
+    padding: 0.65rem !important;
+  }
+
+  #admin2faQrImage.admin-2fa-qr {
+    width: min(9.25rem, 44vw);
+    padding: 0.3rem !important;
+  }
+}
+
+@media (max-height: 700px) {
+  #adminLoginGate {
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
+  }
+
+  #adminLoginGate > img {
+    height: 1.8rem !important;
+  }
+
+  #admin2faQrImage.admin-2fa-qr {
+    width: min(8.5rem, 40vw);
+  }
+
+  #admin2faSetupSection {
+    gap: 0.4rem !important;
+  }
+
+  #admin2faSetupSection > div:first-child {
+    padding: 0.55rem !important;
+  }
+}

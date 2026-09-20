@@ -454,3 +454,26 @@ body {
     overflow: visible;
   }
 }
+
+
+/* =========================================================
+   ADMIN PRODUCTS — explicit responsive visibility fix
+   Avoids conflict with global .hidden { display:none !important; }
+   ========================================================= */
+#adminProductsMobileList {
+  display: block !important;
+}
+
+#adminProductsDesktopTable {
+  display: none !important;
+}
+
+@media (min-width: 640px) {
+  #adminProductsMobileList {
+    display: none !important;
+  }
+
+  #adminProductsDesktopTable {
+    display: block !important;
+  }
+}

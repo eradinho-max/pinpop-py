@@ -952,4 +952,8 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, ensureDatabaseReady };
+// Vercel Express runtime requires the module itself to export the Express app.
+// Keep helper properties attached for local scripts and compatibility.
+module.exports = app;
+module.exports.app = app;
+module.exports.ensureDatabaseReady = ensureDatabaseReady;

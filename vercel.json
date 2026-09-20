@@ -1,32 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "api/index.js": {
-      "maxDuration": 30
-    }
-  },
-  "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "/api/index"
-    },
-    {
-      "source": "/producto/:path*",
-      "destination": "/api/index"
-    },
-    {
-      "source": "/robots.txt",
-      "destination": "/api/index"
-    },
-    {
-      "source": "/sitemap.xml",
-      "destination": "/api/index"
-    },
-    {
-      "source": "/llms.txt",
-      "destination": "/api/index"
-    }
-  ],
   "headers": [
     {
       "source": "/(.*)",

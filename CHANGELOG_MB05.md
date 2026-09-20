@@ -22,3 +22,9 @@
 ## Alcance de la validación
 
 No se ejecutó un navegador real ni un deploy de prueba contra un Supabase externo dentro de este entorno. El siguiente paso operativo es desplegar esta build única y validar `/api/health`, `/api/products`, login admin, upload y pedido real no dominio publicado.
+
+## Patch de interfaz administrativa — 2026-09-20
+- El acceso visual al panel Admin fue retirado del encabezado público.
+- El botón `Administración` permanece accesible en el extremo del pie de página con bajo contraste visual.
+- No se modificó la autenticación: el panel continúa protegido por JWT, bcrypt y rate limiting.
+- No existe contraseña administrativa predeterminada en el código o paquete de distribución.

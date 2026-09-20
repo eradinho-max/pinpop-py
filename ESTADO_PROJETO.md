@@ -52,3 +52,7 @@
 ### Macroblocos planejados restantes
 
 **0.** O roadmap funcional definido nesta conversa está concluído. A partir daqui, somente correções derivadas do deploy real ou novas funcionalidades solicitadas.
+
+### Ajuste posterior — acceso Admin
+- El acceso al Admin ya no aparece en el encabezado; se encuentra discretamente en el pie de página.
+- No hay contraseña hardcodeada. El primer usuario admin se crea únicamente si `ADMIN_PASSWORD` tiene al menos 12 caracteres. Cambios posteriores quedan almacenados sólo como hash bcrypt.

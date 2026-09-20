@@ -1,4 +1,4 @@
-# PINPOP — Backup geral v2.1.0
+# PINPOP — Backup geral v2.1.1
 
 Data: 2026-09-20
 
@@ -9,6 +9,7 @@ Este ZIP é o ponto de continuidade recomendado para outro chat/agente.
 - Roadmap funcional definido nesta conversa: concluído.
 - Macroblocos planejados restantes: 0.
 - Próxima ação: deploy único no Netlify e validação do domínio publicado.
+- Acesso Admin: link discreto no rodapé; nenhuma senha padrão no código.
 
 ## Validação executada
 

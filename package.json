@@ -30,6 +30,9 @@
     "pg": "^8.23.0",
     "sql.js": "^1.14.2",
     "serverless-http": "^3.2.0",
-    "@supabase/supabase-js": "^2.0.0"
+    "@supabase/supabase-js": "2.116.0"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

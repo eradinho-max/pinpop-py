@@ -2,6 +2,7 @@ const initSqlJs = require('sql.js');
 const fs = require('fs');
 const path = require('path');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const DB_DIR = path.join(__dirname, 'data');
 const DB_FILE = process.env.DATABASE_PATH || path.join(DB_DIR, 'pinpop.sqlite');
@@ -27,15 +28,17 @@ function persistDb() {
   }
 }
 
-// Convert '?' placeholders to '$1, $2, ...' for PostgreSQL queries
+// Convert '?' placeholders to '$1, $2, ...' for PostgreSQL queries.
+// node-postgres uses unnamed statements here, which is compatible with Supavisor transaction mode.
 function toPgSql(sql) {
   let idx = 1;
   return sql.replace(/\?/g, () => `$${idx++}`);
 }
 
-async function queryAll(sql, params = []) {
+async function queryAll(sql, params = [], pgClient = null) {
   if (isPostgres) {
-    const res = await pgPool.query(toPgSql(sql), params);
+    const executor = pgClient || pgPool;
+    const res = await executor.query(toPgSql(sql), params);
     return res.rows;
   }
   const stmt = db.prepare(sql);
@@ -48,16 +51,58 @@ async function queryAll(sql, params = []) {
   return rows;
 }
 
-async function queryOne(sql, params = []) {
-  const rows = await queryAll(sql, params);
+async function queryOne(sql, params = [], pgClient = null) {
+  const rows = await queryAll(sql, params, pgClient);
   return rows.length > 0 ? rows[0] : null;
 }
 
-async function runSql(sql, params = []) {
+async function runSql(sql, params = [], pgClient = null) {
   if (isPostgres) {
-    return await pgPool.query(toPgSql(sql), params);
+    const executor = pgClient || pgPool;
+    return await executor.query(toPgSql(sql), params);
   }
   db.run(sql, params);
+  return null;
+}
+
+// Guarantee that every PostgreSQL transaction uses one physical pooled connection.
+// SQLite keeps the same semantics on its single in-memory connection.
+async function withTransaction(work) {
+  if (isPostgres) {
+    const client = await pgPool.connect();
+    try {
+      await client.query('BEGIN');
+      const tx = {
+        queryAll: (sql, params = []) => queryAll(sql, params, client),
+        queryOne: (sql, params = []) => queryOne(sql, params, client),
+        runSql: (sql, params = []) => runSql(sql, params, client)
+      };
+      const result = await work(tx);
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
+  db.run('BEGIN TRANSACTION;');
+  try {
+    const tx = { queryAll, queryOne, runSql };
+    const result = await work(tx);
+    db.run('COMMIT;');
+    persistDb();
+    return result;
+  } catch (err) {
+    try { db.run('ROLLBACK;'); } catch (_) {}
+    throw err;
+  }
+}
+
+function randomId(prefix) {
+  return `${prefix}-${crypto.randomUUID()}`;
 }
 
 // Sanitize user-provided text strings (removes HTML tags and dangerous control characters WITHOUT double-encoding entities)
@@ -73,18 +118,39 @@ function sanitizeString(str, maxLen = 255) {
 async function initDatabase() {
   if (isPostgres) {
     const { Pool } = require('pg');
+    const poolMax = Math.max(1, Number(process.env.PG_POOL_MAX || (isNetlifyRuntime ? 1 : 5)));
     pgPool = new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
+      ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
+      max: poolMax,
+      idleTimeoutMillis: 10000,
+      connectionTimeoutMillis: 10000,
+      allowExitOnIdle: true
     });
-    console.log('✓ Conexión establecida con base de datos PostgreSQL / Supabase.');
+
+    // Fail fast if the DATABASE_URL is invalid.
+    await pgPool.query('SELECT 1');
+    console.log(`✓ Conexión establecida con PostgreSQL / Supabase (pool max=${poolMax}).`);
     
-    // Execute DDL schema on PostgreSQL if needed
+    // Execute idempotent DDL schema on PostgreSQL if needed.
     const schemaPath = path.join(__dirname, 'schema.sql');
     if (fs.existsSync(schemaPath)) {
       const ddl = fs.readFileSync(schemaPath, 'utf8');
       await pgPool.query(ddl);
     }
+
+    // Keep the human-friendly order sequence ahead of any previously imported P#### ids.
+    await pgPool.query(`
+      SELECT setval(
+        'pinpop_order_number_seq',
+        GREATEST(
+          1000,
+          (SELECT last_value FROM pinpop_order_number_seq),
+          COALESCE((SELECT MAX(SUBSTRING(id FROM 2)::BIGINT) FROM orders WHERE id ~ '^P[0-9]+$'), 1000)
+        ),
+        true
+      )
+    `);
   } else {
     const wasmPath = require.resolve('sql.js/dist/sql-wasm.wasm');
     SQL = await initSqlJs({
@@ -694,7 +760,6 @@ async function createOrderSecure({ customer, items }) {
     throw new Error('Nombre y teléfono son obligatorios.');
   }
 
-  // Clean strings without entity double-encoding
   const safeName = sanitizeString(customer.name, 100);
   const safePhone = sanitizeString(customer.phone, 30);
   const safeAddress = sanitizeString(customer.address, 200);
@@ -702,92 +767,96 @@ async function createOrderSecure({ customer, items }) {
   const safeNotes = sanitizeString(customer.notes, 250);
   const safeDeliveryType = customer.deliveryType === 'pickup' ? 'pickup' : 'delivery';
 
-  // 1. Fetch each authoritative product from the DB and validate stock
-  let subtotal = 0;
-  const verifiedItems = [];
+  const created = await withTransaction(async (tx) => {
+    let subtotal = 0;
+    const verifiedItems = [];
 
-  for (const item of items) {
-    const qty = parseInt(item.quantity, 10);
-    if (isNaN(qty) || qty <= 0 || qty > 100) {
-      throw new Error(`Cantidad inválida para el producto.`);
+    for (const item of items) {
+      const qty = parseInt(item.quantity, 10);
+      if (isNaN(qty) || qty <= 0 || qty > 100) {
+        throw new Error('Cantidad inválida para el producto.');
+      }
+
+      const prod = await tx.queryOne(
+        'SELECT * FROM products WHERE id = ? AND (active = 1 OR active = true)',
+        [item.productId]
+      );
+      if (!prod) throw new Error('El producto seleccionado no existe o está inactivo.');
+      if (Number(prod.stock) < qty) {
+        throw new Error(`Stock insuficiente para "${prod.name}". Stock disponible: ${prod.stock}, solicitado: ${qty}.`);
+      }
+
+      const effectivePrice = prod.promo_price !== null && Number(prod.promo_price) > 0
+        ? Number(prod.promo_price)
+        : Number(prod.price);
+      const lineTotal = effectivePrice * qty;
+      subtotal += lineTotal;
+
+      verifiedItems.push({
+        productId: prod.id,
+        sku: prod.sku,
+        name: prod.name,
+        image: prod.image,
+        price: effectivePrice,
+        quantity: qty,
+        lineTotal
+      });
     }
 
-    const prod = await queryOne('SELECT * FROM products WHERE id = ? AND (active = 1 OR active = true)', [item.productId]);
-    if (!prod) {
-      throw new Error(`El producto seleccionado no existe o está inactivo.`);
+    const settingRows = await tx.queryAll('SELECT key, value FROM settings');
+    const settings = {};
+    for (const row of settingRows) {
+      try { settings[row.key] = JSON.parse(row.value); }
+      catch (_) { settings[row.key] = row.value; }
     }
 
-    if (prod.stock < qty) {
-      throw new Error(`Stock insuficiente para "${prod.name}". Stock disponible: ${prod.stock}, solicitado: ${qty}.`);
+    const deliveryFeeDefault = Number(settings.deliveryFee || 15000);
+    const freeThreshold = Number(settings.freeDeliveryThreshold || 100000);
+    const deliveryFee = safeDeliveryType === 'delivery' && subtotal < freeThreshold
+      ? deliveryFeeDefault
+      : 0;
+    const total = subtotal + deliveryFee;
+
+    let nextNum;
+    if (isPostgres) {
+      const seqRow = await tx.queryOne("SELECT nextval('pinpop_order_number_seq') AS next_num");
+      nextNum = Number(seqRow.next_num);
+    } else {
+      const orderRows = await tx.queryAll('SELECT id FROM orders');
+      let maxNum = 1000;
+      for (const row of orderRows) {
+        const match = /^P(\d+)$/.exec(String(row.id || ''));
+        if (match) maxNum = Math.max(maxNum, Number(match[1]));
+      }
+      nextNum = maxNum + 1;
     }
 
-    const effectivePrice = prod.promo_price !== null && prod.promo_price > 0 ? prod.promo_price : prod.price;
-    const lineTotal = effectivePrice * qty;
-    subtotal += lineTotal;
+    const orderId = `P${nextNum}`;
+    const now = new Date().toISOString();
 
-    verifiedItems.push({
-      productId: prod.id,
-      sku: prod.sku,
-      name: prod.name,
-      image: prod.image,
-      price: effectivePrice,
-      quantity: qty,
-      lineTotal
-    });
-  }
-
-  // 2. Authoritative Delivery Calculation
-  const settings = await getPublicSettings();
-  const deliveryFeeDefault = settings.deliveryFee || 15000;
-  const freeThreshold = settings.freeDeliveryThreshold || 100000;
-  
-  let deliveryFee = 0;
-  if (safeDeliveryType === 'delivery') {
-    deliveryFee = subtotal >= freeThreshold ? 0 : deliveryFeeDefault;
-  }
-
-  const total = subtotal + deliveryFee;
-
-  // 3. Generate Order ID
-  const countRow = await queryOne('SELECT COUNT(*) as count FROM orders');
-  const nextNum = 1001 + (countRow ? Number(countRow.count) : 0);
-  const orderId = 'P' + nextNum;
-  const now = new Date().toISOString();
-
-  // 4. Insert order
-  await runSql(
-    `INSERT INTO orders (
-      id, customer_name, customer_phone, delivery_type, address, payment_method, notes, subtotal, delivery_fee, total, status, stock_deducted, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      orderId,
-      safeName,
-      safePhone,
-      safeDeliveryType,
-      safeAddress,
-      safePayment,
-      safeNotes,
-      subtotal,
-      deliveryFee,
-      total,
-      'pending',
-      0,
-      now
-    ]
-  );
-
-  for (const it of verifiedItems) {
-    const itemId = 'item-' + Math.random().toString(36).substring(2, 9);
-    await runSql(
-      `INSERT INTO order_items (id, order_id, product_id, product_name, sku, price, quantity, line_total)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [itemId, orderId, it.productId, it.name, it.sku, it.price, it.quantity, it.lineTotal]
+    await tx.runSql(
+      `INSERT INTO orders (
+        id, customer_name, customer_phone, delivery_type, address, payment_method, notes,
+        subtotal, delivery_fee, total, status, stock_deducted, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        orderId, safeName, safePhone, safeDeliveryType, safeAddress, safePayment, safeNotes,
+        subtotal, deliveryFee, total, 'pending', 0, now
+      ]
     );
-  }
 
-  persistDb();
+    for (const it of verifiedItems) {
+      await tx.runSql(
+        `INSERT INTO order_items (id, order_id, product_id, product_name, sku, price, quantity, line_total)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [randomId('item'), orderId, it.productId, it.name, it.sku, it.price, it.quantity, it.lineTotal]
+      );
+    }
 
-  // 5. Generate pristine WhatsApp message (pure plain text, no HTML entities)
+    return { orderId, now, verifiedItems, subtotal, deliveryFee, total, settings };
+  });
+
+  const { orderId, now, verifiedItems, subtotal, deliveryFee, total, settings } = created;
   const formatPrice = (v) => `Gs. ${Number(v).toLocaleString('es-PY')}`;
   let msg = `Hola 👋 Quiero realizar el pedido #${orderId}\n\n`;
   verifiedItems.forEach(it => {
@@ -795,24 +864,14 @@ async function createOrderSecure({ customer, items }) {
   });
   msg += `\nTotal: ${formatPrice(total)}`;
 
-  if (safeName) {
-    msg += `\n\n👤 *Cliente:* ${safeName}`;
-  }
-  if (safeDeliveryType === 'delivery' && safeAddress) {
-    msg += `\n📍 *Entrega:* ${safeAddress}`;
-  } else if (safeDeliveryType === 'pickup') {
-    msg += `\n🏪 *Retiro en local*`;
-  }
-  if (safePayment) {
-    msg += `\n💳 *Pago:* ${safePayment}`;
-  }
-  if (safeNotes) {
-    msg += `\n📝 *Nota:* ${safeNotes}`;
-  }
+  if (safeName) msg += `\n\n👤 *Cliente:* ${safeName}`;
+  if (safeDeliveryType === 'delivery' && safeAddress) msg += `\n📍 *Entrega:* ${safeAddress}`;
+  else if (safeDeliveryType === 'pickup') msg += '\n🏪 *Retiro en local*';
+  if (safePayment) msg += `\n💳 *Pago:* ${safePayment}`;
+  if (safeNotes) msg += `\n📝 *Nota:* ${safeNotes}`;
 
-  const rawPhone = (settings.whatsappNumber || '595981234567').replace(/\D/g, '');
-  const encodedText = encodeURIComponent(msg);
-  const whatsappUrl = `https://wa.me/${rawPhone}?text=${encodedText}`;
+  const rawPhone = String(settings.whatsappNumber || '595981234567').replace(/\D/g, '');
+  const whatsappUrl = `https://wa.me/${rawPhone}?text=${encodeURIComponent(msg)}`;
 
   return {
     order: {
@@ -883,14 +942,10 @@ async function getProductById(id) {
 
 async function createProductAdmin(data) {
   const name = sanitizeString(data.name, 150);
-  if (!name) {
-    throw new Error('El nombre del producto es obligatorio.');
-  }
+  if (!name) throw new Error('El nombre del producto es obligatorio.');
 
   const price = Number(data.price);
-  if (isNaN(price) || price < 0) {
-    throw new Error('El precio del producto debe ser mayor o igual a 0.');
-  }
+  if (isNaN(price) || price < 0) throw new Error('El precio del producto debe ser mayor o igual a 0.');
 
   const stock = Math.max(0, parseInt(data.stock, 10) || 0);
   const minStock = Math.max(0, parseInt(data.minStock, 10) || 3);
@@ -903,74 +958,53 @@ async function createProductAdmin(data) {
   const featured = data.featured ? 1 : 0;
   const image = data.image && typeof data.image === 'string' ? data.image.trim() : '/images/pins/estetoscopio-pin.png';
   const galleryImages = Array.isArray(data.galleryImages) ? JSON.stringify(data.galleryImages) : '[]';
+  const id = randomId('pin');
 
-  const id = 'pin-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6);
-
-  // Auto-generate unique SKU if omitted
   let sku = data.sku ? sanitizeString(data.sku, 30).toUpperCase().replace(/\s+/g, '-') : '';
   if (!sku) {
     let prefix = 'PIN';
     const cleanCat = category.toUpperCase().replace(/[^A-Z]/g, '');
-    if (cleanCat.length >= 3) {
-      prefix = cleanCat.substring(0, 3);
-    } else if (targetType === 'estetoscopio') {
-      prefix = 'EST';
+    if (cleanCat.length >= 3) prefix = cleanCat.substring(0, 3);
+    else if (targetType === 'estetoscopio') prefix = 'EST';
+
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const candidate = `${prefix}-${crypto.randomInt(1000, 10000)}`;
+      const collision = await queryOne('SELECT id FROM products WHERE sku = ?', [candidate]);
+      if (!collision) {
+        sku = candidate;
+        break;
+      }
     }
-    const countRow = await queryOne('SELECT COUNT(*) as count FROM products');
-    const seq = (Number(countRow?.count || 0) + 1).toString().padStart(3, '0');
-    sku = `${prefix}-${seq}`;
-    // Verify collision
-    const collision = await queryOne('SELECT id FROM products WHERE sku = ?', [sku]);
-    if (collision) {
-      sku = `${prefix}-${Math.floor(100 + Math.random() * 900)}`;
-    }
+    if (!sku) throw new Error('No se pudo generar un SKU único. Intente nuevamente.');
   } else {
-    // Validate duplicate manual SKU
     const existingSku = await queryOne('SELECT id FROM products WHERE sku = ?', [sku]);
-    if (existingSku) {
-      throw new Error(`El código SKU "${sku}" ya existe.`);
-    }
+    if (existingSku) throw new Error(`El código SKU "${sku}" ya existe.`);
   }
 
   const now = new Date().toISOString();
-
-  await runSql(
-    `INSERT INTO products (
-      id, sku, name, category, target_type, price, promo_price, cost_price, stock, min_stock, image, description, badge, sales_count, active, featured, gallery_images, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      id,
-      sku,
-      name,
-      category,
-      targetType,
-      price,
-      promoPrice,
-      costPrice,
-      stock,
-      minStock,
-      image,
-      description,
-      badge,
-      0,
-      data.active !== undefined ? (data.active ? 1 : 0) : 1,
-      featured,
-      galleryImages,
-      now,
-      now
-    ]
-  );
-
-  // Initial stock movement audit record
-  if (stock > 0) {
-    await runSql(
-      `INSERT INTO stock_movements (id, product_id, sku, product_name, type, quantity, prev_stock, new_stock, reason, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ['mov-' + Math.random().toString(36).substring(2, 9), id, sku, name, 'entrada', stock, 0, stock, 'Stock inicial / Alta de producto', now]
+  await withTransaction(async (tx) => {
+    await tx.runSql(
+      `INSERT INTO products (
+        id, sku, name, category, target_type, price, promo_price, cost_price, stock, min_stock,
+        image, description, badge, sales_count, active, featured, gallery_images, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        id, sku, name, category, targetType, price, promoPrice, costPrice, stock, minStock,
+        image, description, badge, 0, data.active !== undefined ? (data.active ? 1 : 0) : 1,
+        featured, galleryImages, now, now
+      ]
     );
-  }
 
-  persistDb();
+    if (stock > 0) {
+      await tx.runSql(
+        `INSERT INTO stock_movements (
+          id, product_id, sku, product_name, type, quantity, prev_stock, new_stock, reason, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [randomId('mov'), id, sku, name, 'entrada', stock, 0, stock, 'Stock inicial / Alta de producto', now]
+      );
+    }
+  });
+
   return await queryOne('SELECT * FROM products WHERE id = ?', [id]);
 }
 
@@ -1033,68 +1067,66 @@ async function updateProductAdmin(id, data) {
 }
 
 async function adjustStockAdmin(productId, payload) {
-  const prod = await queryOne('SELECT * FROM products WHERE id = ?', [productId]);
-  if (!prod) throw new Error('Producto no encontrado');
+  const result = await withTransaction(async (tx) => {
+    const lockSql = isPostgres
+      ? 'SELECT * FROM products WHERE id = ? FOR UPDATE'
+      : 'SELECT * FROM products WHERE id = ?';
+    const prod = await tx.queryOne(lockSql, [productId]);
+    if (!prod) throw new Error('Producto no encontrado');
 
-  const prevStock = Number(prod.stock) || 0;
-  let newStock;
-  let quantityChange;
-  let movType = 'ajuste';
+    const prevStock = Number(prod.stock) || 0;
+    let newStock;
+    let quantityChange;
+    let movType = 'ajuste';
 
-  const { type, delta, stock: targetStock, quantity, reason = 'Ajuste manual de inventario' } = payload;
+    const { type, delta, stock: targetStock, quantity, reason = 'Ajuste manual de inventario' } = payload;
 
-  if (type === 'entrada') {
-    quantityChange = Math.abs(Number(quantity || delta || 0));
-    newStock = prevStock + quantityChange;
-    movType = 'entrada';
-  } else if (type === 'salida') {
-    quantityChange = -Math.abs(Number(quantity || delta || 0));
-    newStock = Math.max(0, prevStock + quantityChange);
-    movType = 'ajuste';
-  } else if (type === 'fijo' || targetStock !== undefined) {
-    const desired = targetStock !== undefined ? targetStock : quantity;
-    newStock = Math.max(0, Number(desired) || 0);
-    quantityChange = newStock - prevStock;
-    movType = quantityChange >= 0 ? 'entrada' : 'ajuste';
-  } else if (delta !== undefined) {
-    quantityChange = Number(delta);
-    newStock = Math.max(0, prevStock + quantityChange);
-    movType = quantityChange > 0 ? 'entrada' : 'ajuste';
-  } else {
-    throw new Error('Debe especificar tipo de ajuste (entrada, salida, fijo) o cantidad.');
-  }
+    if (type === 'entrada') {
+      quantityChange = Math.abs(Number(quantity || delta || 0));
+      newStock = prevStock + quantityChange;
+      movType = 'entrada';
+    } else if (type === 'salida') {
+      quantityChange = -Math.abs(Number(quantity || delta || 0));
+      newStock = Math.max(0, prevStock + quantityChange);
+      movType = 'ajuste';
+    } else if (type === 'fijo' || targetStock !== undefined) {
+      const desired = targetStock !== undefined ? targetStock : quantity;
+      newStock = Math.max(0, Number(desired) || 0);
+      quantityChange = newStock - prevStock;
+      movType = quantityChange >= 0 ? 'entrada' : 'ajuste';
+    } else if (delta !== undefined) {
+      quantityChange = Number(delta);
+      newStock = Math.max(0, prevStock + quantityChange);
+      movType = quantityChange > 0 ? 'entrada' : 'ajuste';
+    } else {
+      throw new Error('Debe especificar tipo de ajuste (entrada, salida, fijo) o cantidad.');
+    }
 
-  const now = new Date().toISOString();
-  await runSql('UPDATE products SET stock = ?, updated_at = ? WHERE id = ?', [newStock, now, productId]);
+    if (!Number.isFinite(quantityChange)) throw new Error('Cantidad de stock inválida.');
 
-  const safeReason = sanitizeString(reason, 200) || 'Ajuste de inventario';
-  await runSql(
-    `INSERT INTO stock_movements (id, product_id, sku, product_name, type, quantity, prev_stock, new_stock, reason, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      'mov-' + Math.random().toString(36).substring(2, 9),
-      prod.id,
-      prod.sku,
-      prod.name,
-      movType,
-      quantityChange,
+    const now = new Date().toISOString();
+    const safeReason = sanitizeString(reason, 200) || 'Ajuste de inventario';
+
+    await tx.runSql('UPDATE products SET stock = ?, updated_at = ? WHERE id = ?', [newStock, now, productId]);
+    await tx.runSql(
+      `INSERT INTO stock_movements (
+        id, product_id, sku, product_name, type, quantity, prev_stock, new_stock, reason, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [randomId('mov'), prod.id, prod.sku, prod.name, movType, quantityChange, prevStock, newStock, safeReason, now]
+    );
+
+    return {
+      success: true,
+      productId: prod.id,
+      sku: prod.sku,
       prevStock,
       newStock,
-      safeReason,
-      now
-    ]
-  );
+      delta: quantityChange,
+      reason: safeReason
+    };
+  });
 
-  persistDb();
-  return {
-    success: true,
-    productId: prod.id,
-    sku: prod.sku,
-    prevStock,
-    newStock,
-    delta: quantityChange,
-    reason: safeReason
-  };
+  return result;
 }
 
 // ==========================================
@@ -1195,75 +1227,71 @@ async function getAllOrdersAdmin() {
   return out;
 }
 
-// REAL SQL TRANSACTION: Confirm order with strict pre-validation & atomic execution
+// Confirm order with one real transaction and row locks on PostgreSQL.
 async function confirmOrderStockAdmin(orderId) {
-  const order = await queryOne('SELECT * FROM orders WHERE id = ?', [orderId]);
-  if (!order) throw new Error('Pedido no encontrado');
+  return await withTransaction(async (tx) => {
+    const orderSql = isPostgres
+      ? 'SELECT * FROM orders WHERE id = ? FOR UPDATE'
+      : 'SELECT * FROM orders WHERE id = ?';
+    const order = await tx.queryOne(orderSql, [orderId]);
+    if (!order) throw new Error('Pedido no encontrado');
 
-  if (order.stock_deducted === 1 || order.stock_deducted === true) {
-    throw new Error('El stock de este pedido ya fue descontado anteriormente.');
-  }
-
-  const items = await queryAll('SELECT * FROM order_items WHERE order_id = ?', [orderId]);
-
-  // Pre-validation: ensure every item has sufficient physical stock
-  for (const item of items) {
-    const prod = await queryOne('SELECT * FROM products WHERE id = ?', [item.product_id]);
-    if (!prod) {
-      throw new Error(`El producto "${item.product_name}" ya no existe en el catálogo.`);
+    if (order.stock_deducted === 1 || order.stock_deducted === true) {
+      throw new Error('El stock de este pedido ya fue descontado anteriormente.');
     }
-    if (prod.stock < item.quantity) {
-      throw new Error(
-        `⚠ Stock insuficiente para confirmar la venta: el pin "${prod.name}" (${prod.sku}) solo tiene ${prod.stock} unidad(es) física(s) y el pedido requiere ${item.quantity}.`
-      );
+    if (order.status === 'cancelled' || order.status === 'delivered') {
+      throw new Error('Este pedido no puede ser confirmado en su estado actual.');
     }
-  }
 
-  // ATOMIC SQL TRANSACTION
-  await runSql('BEGIN TRANSACTION;');
-  try {
+    const items = await tx.queryAll('SELECT * FROM order_items WHERE order_id = ?', [orderId]);
+    if (items.length === 0) throw new Error('El pedido no contiene productos.');
+
+    const lockedProducts = new Map();
+    for (const item of items) {
+      const prodSql = isPostgres
+        ? 'SELECT * FROM products WHERE id = ? FOR UPDATE'
+        : 'SELECT * FROM products WHERE id = ?';
+      const prod = await tx.queryOne(prodSql, [item.product_id]);
+      if (!prod) throw new Error(`El producto "${item.product_name}" ya no existe en el catálogo.`);
+      if (Number(prod.stock) < Number(item.quantity)) {
+        throw new Error(
+          `⚠ Stock insuficiente para confirmar la venta: el pin "${prod.name}" (${prod.sku}) solo tiene ${prod.stock} unidad(es) física(s) y el pedido requiere ${item.quantity}.`
+        );
+      }
+      lockedProducts.set(item.product_id, prod);
+    }
+
     const now = new Date().toISOString();
     const deductions = [];
 
     for (const item of items) {
-      const prod = await queryOne('SELECT * FROM products WHERE id = ?', [item.product_id]);
-      const prevStock = prod.stock;
-      const newStock = prevStock - item.quantity;
-      const newSalesCount = (prod.sales_count || 0) + item.quantity;
+      const prod = lockedProducts.get(item.product_id);
+      const prevStock = Number(prod.stock) || 0;
+      const newStock = prevStock - Number(item.quantity);
+      const newSalesCount = (Number(prod.sales_count) || 0) + Number(item.quantity);
 
-      await runSql(
+      await tx.runSql(
         'UPDATE products SET stock = ?, sales_count = ?, updated_at = ? WHERE id = ?',
         [newStock, newSalesCount, now, prod.id]
       );
 
-      await runSql(
-        `INSERT INTO stock_movements (id, product_id, sku, product_name, type, quantity, prev_stock, new_stock, reason, order_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      await tx.runSql(
+        `INSERT INTO stock_movements (
+          id, product_id, sku, product_name, type, quantity, prev_stock, new_stock, reason, order_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          'mov-' + Math.random().toString(36).substring(2, 9),
-          prod.id,
-          prod.sku,
-          prod.name,
-          'venta',
-          -item.quantity,
-          prevStock,
-          newStock,
-          `Venta pedido #${orderId}`,
-          orderId,
-          now
+          randomId('mov'), prod.id, prod.sku, prod.name, 'venta', -Number(item.quantity),
+          prevStock, newStock, `Venta pedido #${orderId}`, orderId, now
         ]
       );
 
-      deductions.push({ id: prod.id, sku: prod.sku, name: prod.name, prevStock, newStock, quantity: item.quantity });
+      deductions.push({ id: prod.id, sku: prod.sku, name: prod.name, prevStock, newStock, quantity: Number(item.quantity) });
     }
 
-    await runSql(
+    await tx.runSql(
       'UPDATE orders SET status = ?, stock_deducted = 1, confirmed_at = ? WHERE id = ?',
       ['confirmed', now, orderId]
     );
-
-    await runSql('COMMIT;');
-    persistDb();
 
     return {
       success: true,
@@ -1272,74 +1300,64 @@ async function confirmOrderStockAdmin(orderId) {
       deductions,
       message: '¡Venta confirmada y stock descontado con éxito!'
     };
-  } catch (err) {
-    await runSql('ROLLBACK;');
-    throw err;
-  }
+  });
 }
 
-// REAL SQL TRANSACTION: Restore stock if order is cancelled
+// Restore stock if order is cancelled, using the same transaction/row-lock guarantees.
 async function restoreOrderStockAdmin(orderId) {
-  const order = await queryOne('SELECT * FROM orders WHERE id = ?', [orderId]);
-  if (!order) throw new Error('Pedido no encontrado');
+  return await withTransaction(async (tx) => {
+    const orderSql = isPostgres
+      ? 'SELECT * FROM orders WHERE id = ? FOR UPDATE'
+      : 'SELECT * FROM orders WHERE id = ?';
+    const order = await tx.queryOne(orderSql, [orderId]);
+    if (!order) throw new Error('Pedido no encontrado');
 
-  const now = new Date().toISOString();
+    const now = new Date().toISOString();
 
-  if (order.stock_deducted === 0 || order.stock_deducted === false) {
-    await runSql('UPDATE orders SET status = ?, cancelled_at = ? WHERE id = ?', ['cancelled', now, orderId]);
-    persistDb();
-    return { success: true, message: 'Pedido cancelado (ningún stock había sido descontado).' };
-  }
-
-  await runSql('BEGIN TRANSACTION;');
-  try {
-    const items = await queryAll('SELECT * FROM order_items WHERE order_id = ?', [orderId]);
-
-    for (const item of items) {
-      const prod = await queryOne('SELECT * FROM products WHERE id = ?', [item.product_id]);
-      if (prod) {
-        const prevStock = prod.stock;
-        const newStock = prevStock + item.quantity;
-        const newSalesCount = Math.max(0, (prod.sales_count || 0) - item.quantity);
-
-        await runSql(
-          'UPDATE products SET stock = ?, sales_count = ?, updated_at = ? WHERE id = ?',
-          [newStock, newSalesCount, now, prod.id]
-        );
-
-        await runSql(
-          `INSERT INTO stock_movements (id, product_id, sku, product_name, type, quantity, prev_stock, new_stock, reason, order_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            'mov-' + Math.random().toString(36).substring(2, 9),
-            prod.id,
-            prod.sku,
-            prod.name,
-            'estorno',
-            item.quantity,
-            prevStock,
-            newStock,
-            `Estorno pedido #${orderId}`,
-            orderId,
-            now
-          ]
-        );
-      }
+    if (order.stock_deducted === 0 || order.stock_deducted === false) {
+      await tx.runSql(
+        'UPDATE orders SET status = ?, cancelled_at = ? WHERE id = ?',
+        ['cancelled', now, orderId]
+      );
+      return { success: true, message: 'Pedido cancelado (ningún stock había sido descontado).' };
     }
 
-    await runSql(
+    const items = await tx.queryAll('SELECT * FROM order_items WHERE order_id = ?', [orderId]);
+    for (const item of items) {
+      const prodSql = isPostgres
+        ? 'SELECT * FROM products WHERE id = ? FOR UPDATE'
+        : 'SELECT * FROM products WHERE id = ?';
+      const prod = await tx.queryOne(prodSql, [item.product_id]);
+      if (!prod) continue;
+
+      const prevStock = Number(prod.stock) || 0;
+      const qty = Number(item.quantity) || 0;
+      const newStock = prevStock + qty;
+      const newSalesCount = Math.max(0, (Number(prod.sales_count) || 0) - qty);
+
+      await tx.runSql(
+        'UPDATE products SET stock = ?, sales_count = ?, updated_at = ? WHERE id = ?',
+        [newStock, newSalesCount, now, prod.id]
+      );
+
+      await tx.runSql(
+        `INSERT INTO stock_movements (
+          id, product_id, sku, product_name, type, quantity, prev_stock, new_stock, reason, order_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          randomId('mov'), prod.id, prod.sku, prod.name, 'estorno', qty,
+          prevStock, newStock, `Estorno pedido #${orderId}`, orderId, now
+        ]
+      );
+    }
+
+    await tx.runSql(
       'UPDATE orders SET status = ?, stock_deducted = 0, cancelled_at = ? WHERE id = ?',
       ['cancelled', now, orderId]
     );
 
-    await runSql('COMMIT;');
-    persistDb();
-
     return { success: true, message: 'Stock estornado y pedido cancelado con éxito.' };
-  } catch (err) {
-    await runSql('ROLLBACK;');
-    throw err;
-  }
+  });
 }
 
 // Strict order lifecycle: ONLY confirmed orders (with deducted stock) can be marked as delivered!

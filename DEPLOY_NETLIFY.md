@@ -33,10 +33,11 @@ ADMIN_PASSWORD=<sua senha administrativa>
 No Netlify, não utilize SQLite para alterações permanentes. Configure também:
 
 ```text
-DATABASE_URL=<conexão PostgreSQL/Supabase>
+DATABASE_URL=<conexão Transaction Pooler do Supabase, porta 6543>
+PG_POOL_MAX=1
 ```
 
-Sem `DATABASE_URL`, esta versão bloqueia intencionalmente operações que alteram produtos, estoque e pedidos no Netlify.
+Sem `DATABASE_URL`, esta versão bloqueia intencionalmente operações que alteram produtos, estoque e pedidos no Netlify. Para Netlify/serverless, use a conexão **Transaction Pooler (Supavisor)** copiada em **Supabase → Connect**, não a conexão direta montada manualmente.
 
 ## Para upload persistente das fotos
 

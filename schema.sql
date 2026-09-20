@@ -1,4 +1,7 @@
 -- PINPOP • PostgreSQL / Supabase production schema
+-- Server-side only: the browser never receives database credentials.
+
+CREATE SEQUENCE IF NOT EXISTS pinpop_order_number_seq START WITH 1001;
 
 CREATE TABLE IF NOT EXISTS products (
   id VARCHAR(64) PRIMARY KEY,
@@ -86,6 +89,7 @@ CREATE TABLE IF NOT EXISTS categories (
 );
 CREATE INDEX IF NOT EXISTS idx_categories_target ON categories(target_type);
 CREATE INDEX IF NOT EXISTS idx_categories_active ON categories(active);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_name_target_unique ON categories (LOWER(name), target_type);
 
 CREATE TABLE IF NOT EXISTS settings (
   key VARCHAR(64) PRIMARY KEY,
@@ -98,3 +102,15 @@ CREATE TABLE IF NOT EXISTS admin_users (
   password_hash TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+
+-- Defense in depth for Supabase Data API exposure.
+-- PINPOP accesses these tables only through its server-side PostgreSQL connection,
+-- so no anon/authenticated policies are intentionally granted here.
+ALTER TABLE products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE stock_movements ENABLE ROW LEVEL SECURITY;
+ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_users ENABLE ROW LEVEL SECURITY;

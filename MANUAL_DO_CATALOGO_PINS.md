@@ -76,7 +76,8 @@ Para migrar a una base de datos en la nube (PostgreSQL gestionado):
    PORT=3000
    JWT_SECRET=tu_clave_aleatoria_de_64_caracteres_hex
    ADMIN_PASSWORD=tu_password_segura
-   DATABASE_URL=postgresql://postgres:[PASSWORD]@db.[REF].supabase.co:5432/postgres
+   DATABASE_URL=postgresql://postgres.[REF]:[PASSWORD]@[POOLER-HOST]:6543/postgres
+   PG_POOL_MAX=1
    SUPABASE_URL=https://[REF].supabase.co
    SUPABASE_SERVICE_ROLE_KEY=tu_service_role_key
    SUPABASE_BUCKET=pins-images

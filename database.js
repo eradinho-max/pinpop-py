@@ -342,6 +342,27 @@ async function getPublicSettings() {
   return clone(state.settings || {});
 }
 
+const PINPOP_PAYMENT_METHODS = ['Transferencia bancaria', 'PIX', 'Efectivo en retiro'];
+
+function normalizePinpopPaymentMethod(value, deliveryType = 'delivery') {
+  const raw = sanitizeString(value, 60);
+  const aliases = {
+    'Transferencia Bancaria / SIPAP': 'Transferencia bancaria',
+    'Transferencia Bancaria (SIPAP)': 'Transferencia bancaria',
+    'Efectivo contra Entrega': 'Efectivo en retiro',
+    'Billetera Electrónica / Tigo Money': 'Transferencia bancaria',
+    'Tarjeta de Débito / Crédito': 'Transferencia bancaria'
+  };
+  const normalized = aliases[raw] || raw;
+  if (!PINPOP_PAYMENT_METHODS.includes(normalized)) {
+    throw new Error('Forma de pago no permitida.');
+  }
+  if (normalized === 'Efectivo en retiro' && deliveryType !== 'pickup') {
+    throw new Error('El pago en efectivo solo está disponible para retiro personal.');
+  }
+  return normalized;
+}
+
 async function createOrderSecure({ customer, items }) {
   if (!items || !Array.isArray(items) || items.length === 0) throw new Error('El carrito no puede estar vacío.');
   if (!customer || !customer.name || !customer.phone) throw new Error('Nombre y teléfono son obligatorios.');
@@ -349,9 +370,9 @@ async function createOrderSecure({ customer, items }) {
   const safeName = sanitizeString(customer.name, 100);
   const safePhone = sanitizeString(customer.phone, 30);
   const safeAddress = sanitizeString(customer.address, 200);
-  const safePayment = sanitizeString(customer.paymentMethod, 60);
   const safeNotes = sanitizeString(customer.notes, 250);
   const safeDeliveryType = customer.deliveryType === 'pickup' ? 'pickup' : 'delivery';
+  const safePayment = normalizePinpopPaymentMethod(customer.paymentMethod, safeDeliveryType);
 
   const created = await mutateState(async state => {
     let subtotal = 0;
@@ -598,11 +619,123 @@ async function getAllOrdersAdmin() {
   }));
 }
 
+async function updateOrderAdmin(orderId, data) {
+  return mutateState(async state => {
+    const o = state.orders.find(o => o.id === orderId);
+    if (!o) throw new Error('Pedido no encontrado.');
+
+    const name = sanitizeString(data?.name ?? o.customer_name, 100);
+    const phone = sanitizeString(data?.phone ?? o.customer_phone, 30);
+    const deliveryType = data?.deliveryType === 'pickup' ? 'pickup' : 'delivery';
+    const address = deliveryType === 'pickup'
+      ? 'Retiro en Local'
+      : sanitizeString(data?.address ?? o.address, 200);
+    const paymentMethod = normalizePinpopPaymentMethod(data?.paymentMethod ?? o.payment_method, deliveryType);
+    const notes = sanitizeString(data?.notes ?? o.notes, 250);
+
+    if (!name || !phone) throw new Error('Nombre y teléfono son obligatorios.');
+    if (deliveryType === 'delivery' && !address) throw new Error('La dirección es obligatoria para delivery.');
+
+    o.customer_name = name;
+    o.customer_phone = phone;
+    o.delivery_type = deliveryType;
+    o.address = address;
+    o.payment_method = paymentMethod;
+    o.notes = notes;
+    o.updated_at = new Date().toISOString();
+
+    return { success: true, orderId, message: 'Pedido actualizado.' };
+  });
+}
+
+async function markOrderUnfinalizedAdmin(orderId) {
+  return mutateState(async state => {
+    const o = state.orders.find(o => o.id === orderId);
+    if (!o) throw new Error('Pedido no encontrado.');
+    const now = new Date().toISOString();
+
+    if (o.stock_deducted) {
+      const items = state.order_items.filter(i => i.order_id === orderId);
+      for (const item of items) {
+        const p = state.products.find(p => p.id === item.product_id);
+        if (!p) continue;
+        const prev = Number(p.stock) || 0;
+        const qty = Number(item.quantity) || 0;
+        const next = prev + qty;
+        p.stock = next;
+        p.sales_count = Math.max(0, (Number(p.sales_count) || 0) - qty);
+        p.updated_at = now;
+        state.stock_movements.push({
+          id: randomId('mov'),
+          product_id: p.id,
+          sku: p.sku,
+          product_name: p.name,
+          type: 'estorno',
+          quantity: qty,
+          prev_stock: prev,
+          new_stock: next,
+          reason: `Pedido #${orderId} marcado como no finalizado`,
+          order_id: orderId,
+          created_at: now
+        });
+      }
+    }
+
+    o.status = 'pending';
+    o.stock_deducted = 0;
+    o.confirmed_at = null;
+    o.delivered_at = null;
+    o.cancelled_at = null;
+    o.updated_at = now;
+
+    return { success: true, orderId, status: 'pending', message: 'Pedido marcado como no finalizado y stock restaurado.' };
+  });
+}
+
+async function deleteOrderAdmin(orderId) {
+  return mutateState(async state => {
+    const o = state.orders.find(o => o.id === orderId);
+    if (!o) throw new Error('Pedido no encontrado.');
+    const now = new Date().toISOString();
+
+    if (o.stock_deducted) {
+      const items = state.order_items.filter(i => i.order_id === orderId);
+      for (const item of items) {
+        const p = state.products.find(p => p.id === item.product_id);
+        if (!p) continue;
+        const prev = Number(p.stock) || 0;
+        const qty = Number(item.quantity) || 0;
+        const next = prev + qty;
+        p.stock = next;
+        p.sales_count = Math.max(0, (Number(p.sales_count) || 0) - qty);
+        p.updated_at = now;
+        state.stock_movements.push({
+          id: randomId('mov'),
+          product_id: p.id,
+          sku: p.sku,
+          product_name: p.name,
+          type: 'estorno',
+          quantity: qty,
+          prev_stock: prev,
+          new_stock: next,
+          reason: `Estorno automático por exclusión del pedido #${orderId}`,
+          order_id: orderId,
+          created_at: now
+        });
+      }
+    }
+
+    state.order_items = state.order_items.filter(i => i.order_id !== orderId);
+    state.orders = state.orders.filter(item => item.id !== orderId);
+
+    return { success: true, orderId, message: 'Pedido excluido.' };
+  });
+}
+
 async function confirmOrderStockAdmin(orderId) {
   return mutateState(async state => {
     const o = state.orders.find(o => o.id === orderId);
     if (!o) throw new Error('Pedido no encontrado');
-    if (o.status === 'cancelled') throw new Error('El pedido está cancelado.');
     if (o.stock_deducted) return { success: true, message: 'El stock ya había sido descontado.' };
     const items = state.order_items.filter(i => i.order_id === orderId);
     for (const item of items) {
@@ -617,7 +750,7 @@ async function confirmOrderStockAdmin(orderId) {
       p.stock = next; p.sales_count = (Number(p.sales_count)||0) + qty; p.updated_at = now;
       state.stock_movements.push({ id: randomId('mov'), product_id: p.id, sku: p.sku, product_name: p.name, type: 'venta', quantity: -qty, prev_stock: prev, new_stock: next, reason: `Venta pedido #${orderId}`, order_id: orderId, created_at: now });
     }
-    o.status = 'confirmed'; o.stock_deducted = 1; o.confirmed_at = now;
+    o.status = 'confirmed'; o.stock_deducted = 1; o.confirmed_at = now; o.delivered_at = null; o.cancelled_at = null; o.updated_at = now;
     return { success: true, orderId, status: 'confirmed', message: 'Pedido confirmado y stock descontado.' };
   });
 }
@@ -701,6 +834,9 @@ module.exports = {
   adjustStockAdmin,
   softDeleteProductAdmin,
   getAllOrdersAdmin,
+  updateOrderAdmin,
+  markOrderUnfinalizedAdmin,
+  deleteOrderAdmin,
   confirmOrderStockAdmin,
   restoreOrderStockAdmin,
   markOrderDeliveredAdmin,

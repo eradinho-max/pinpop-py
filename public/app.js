@@ -1011,6 +1011,15 @@
       if (addrInput) addrInput.required = true;
     }
 
+    const paymentSelect = document.getElementById('customerPaymentInput');
+    if (paymentSelect) {
+      const cashOption = Array.from(paymentSelect.options).find(opt => opt.value === 'Efectivo en retiro');
+      if (cashOption) cashOption.disabled = deliveryChoice !== 'pickup';
+      if (deliveryChoice !== 'pickup' && paymentSelect.value === 'Efectivo en retiro') {
+        paymentSelect.value = 'Transferencia bancaria';
+      }
+    }
+
     if (modal) modal.classList.remove('hidden');
     refreshLucide();
   }
@@ -1031,6 +1040,11 @@
 
     if (!name || !phone) {
       showToast('Por favor completá tu nombre y celular.', 'warning');
+      return;
+    }
+
+    if (paymentMethod === 'Efectivo en retiro' && deliveryChoice !== 'pickup') {
+      showToast('El efectivo está disponible solamente para retiro personal.', 'warning');
       return;
     }
 
@@ -2744,12 +2758,16 @@
   async function openAdminModal() {
     const modal = document.getElementById('adminModal');
     if (modal) modal.classList.remove('hidden');
-    try {
-      const res = await fetch('/api/auth/session', { cache: 'no-store' });
-      authToken = res.ok;
-    } catch (_) {
-      authToken = false;
+
+    if (!authToken) {
+      try {
+        const res = await fetch('/api/auth/session', { cache: 'no-store' });
+        authToken = res.ok;
+      } catch (_) {
+        authToken = false;
+      }
     }
+
     if (authToken) {
       showAdminPanel();
       await loadAdminOrders();
@@ -2889,6 +2907,15 @@
     }
   }
 
+  function canonicalOrderPayment(order) {
+    const value = order?.customer?.paymentMethod || '';
+    if (value === 'PIX') return 'PIX';
+    if (value === 'Efectivo en retiro' || value === 'Efectivo contra Entrega') {
+      return order?.customer?.deliveryType === 'pickup' ? 'Efectivo en retiro' : 'Transferencia bancaria';
+    }
+    return 'Transferencia bancaria';
+  }
+
   function renderAdminOrders() {
     const container = document.getElementById('adminOrdersContainer');
     if (!container) return;
@@ -2897,64 +2924,41 @@
       container.innerHTML = `
         <div class="text-center py-12 bg-white rounded-2xl border border-slate-200 p-6 text-slate-400">
           <p class="font-bold">No hay pedidos registrados todavía.</p>
-          <p class="text-xs">Los pedidos generados por WhatsApp aparecerán acá para confirmar y dar baja al stock.</p>
+          <p class="text-xs">Los pedidos recibidos aparecerán acá para gestionar, finalizar o excluir.</p>
         </div>
       `;
       return;
     }
 
     container.innerHTML = adminOrders.map(order => {
-      const isConfirmed = order.status === 'confirmed';
-      const isPending = order.status === 'pending';
-      const isDelivered = order.status === 'delivered';
-      const isCancelled = order.status === 'cancelled';
+      const isFinalized = order.status === 'confirmed' || order.status === 'delivered';
       const dateStr = new Date(order.createdAt).toLocaleString('es-PY');
-
       const rawPhone = (order.customer.phone || '').replace(/\D/g, '');
       const clientWaLink = `https://wa.me/${rawPhone}`;
 
       return `
-        <div class="bg-white rounded-2xl border ${isPending ? 'border-amber-300 ring-2 ring-amber-100' : isDelivered ? 'border-blue-200 bg-blue-50/20' : 'border-slate-200'} p-4 space-y-3">
-          
+        <div class="bg-white rounded-2xl border ${isFinalized ? 'border-emerald-200' : 'border-amber-300 ring-1 ring-amber-100'} p-4 space-y-3">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
             <div class="flex items-center gap-2">
               <span class="font-black text-slate-900 text-sm">#${escapeHtml(order.id)}</span>
               <span class="text-xs text-slate-400">${dateStr}</span>
             </div>
-
-            <div>
-              ${isPending ? `
-                <span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-800 flex items-center gap-1">
-                  <span>⏳</span> Pendiente en WhatsApp
-                </span>
-              ` : isConfirmed ? `
-                <span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 flex items-center gap-1">
-                  <span>✅</span> Confirmado (Stock Descontado)
-                </span>
-              ` : isDelivered ? `
-                <span class="px-2.5 py-0.5 rounded-full text-xs font-black bg-blue-100 text-blue-800 flex items-center gap-1">
-                  <span>📦</span> Entregado
-                </span>
-              ` : `
-                <span class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-500">
-                  Cancelado
-                </span>
-              `}
-            </div>
+            <span class="px-2.5 py-1 rounded-full text-xs font-black ${isFinalized ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">
+              ${isFinalized ? '✅ Pedido finalizado' : '⏳ Pedido no finalizado'}
+            </span>
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-12 gap-3 text-xs">
             <div class="md:col-span-5 bg-slate-50 p-2.5 rounded-xl border border-slate-200/80 space-y-1">
               <div class="font-bold text-slate-800 flex items-center justify-between">
                 <span>👤 ${escapeHtml(order.customer.name || 'Cliente')}</span>
-                <a href="${clientWaLink}" target="_blank" rel="noopener noreferrer" class="text-[#FF2D8A] hover:text-[#E01E75] font-bold flex items-center gap-1 text-[11px]">
-                  <i data-lucide="message-circle" class="w-3.5 h-3.5"></i>
-                  <span>WhatsApp</span>
+                <a href="${clientWaLink}" target="_blank" rel="noopener noreferrer" class="text-[#FF2D8A] font-bold flex items-center gap-1 text-[11px]">
+                  <i data-lucide="message-circle" class="w-3.5 h-3.5"></i><span>WhatsApp</span>
                 </a>
               </div>
               <div class="text-slate-600 font-mono">📱 ${escapeHtml(order.customer.phone || 'Sin número')}</div>
-              <div class="text-slate-600">📍 ${order.customer.deliveryType === 'delivery' ? `Delivery: ${escapeHtml(order.customer.address || '')}` : '🏪 Retiro en Local'}</div>
-              ${order.customer.paymentMethod ? `<div class="text-slate-600">💳 ${escapeHtml(order.customer.paymentMethod)}</div>` : ''}
+              <div class="text-slate-600">📍 ${order.customer.deliveryType === 'delivery' ? `Delivery: ${escapeHtml(order.customer.address || '')}` : 'Retiro personal'}</div>
+              <div class="text-slate-600">💳 ${escapeHtml(canonicalOrderPayment(order))}</div>
               ${order.customer.notes ? `<div class="text-slate-500 italic mt-1 bg-white p-1 rounded text-[11px] border border-slate-200">📝 "${escapeHtml(order.customer.notes)}"</div>` : ''}
             </div>
 
@@ -2964,17 +2968,16 @@
                 <div class="space-y-1 max-h-28 overflow-y-auto">
                   ${(order.items || []).map(item => `
                     <div class="flex items-center justify-between py-1 px-2 bg-slate-50 rounded-lg">
-                      <div class="flex items-center gap-2">
+                      <div class="flex items-center gap-2 min-w-0">
                         <img src="${escapeHtml(item.image)}" class="w-5 h-5 object-contain rounded">
                         <span class="font-bold text-slate-900">${item.quantity}x</span>
-                        <span class="text-slate-700 truncate max-w-[170px]">${escapeHtml(item.name)}</span>
+                        <span class="text-slate-700 truncate">${escapeHtml(item.name)}</span>
                       </div>
-                      <span class="font-bold text-slate-800">${formatPrice(item.price * item.quantity)}</span>
+                      <span class="font-bold text-slate-800 shrink-0">${formatPrice(item.price * item.quantity)}</span>
                     </div>
                   `).join('')}
                 </div>
               </div>
-
               <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between font-black">
                 <span class="text-slate-500">Total:</span>
                 <span class="text-sm text-[#FF2D8A]">${formatPrice(order.total)}</span>
@@ -2982,54 +2985,142 @@
             </div>
           </div>
 
-          <div class="pt-2 border-t border-slate-100 flex items-center justify-end gap-2">
-            ${isPending ? `
-              <button 
-                class="btn-confirm-order-stock px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-black text-xs rounded-xl shadow flex items-center gap-1.5 transition-all"
-                data-id="${escapeHtml(order.id)}"
-              >
-                <i data-lucide="check-circle" class="w-4 h-4"></i>
-                <span>Confirmar venta & Descontar Stock</span>
+          <div class="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-end gap-2">
+            <button class="btn-edit-order px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5" data-id="${escapeHtml(order.id)}">
+              <i data-lucide="edit-3" class="w-3.5 h-3.5"></i><span>Editar pedido</span>
+            </button>
+            ${isFinalized ? `
+              <button class="btn-unfinalize-order px-3 py-2 bg-amber-100 hover:bg-amber-200 text-amber-800 font-black text-xs rounded-xl flex items-center gap-1.5" data-id="${escapeHtml(order.id)}">
+                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i><span>Marcar no finalizado</span>
               </button>
-            ` : isConfirmed ? `
-              <button 
-                class="btn-deliver-order px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-black text-xs rounded-xl shadow flex items-center gap-1.5 transition-all"
-                data-id="${escapeHtml(order.id)}"
-              >
-                <i data-lucide="package-check" class="w-4 h-4"></i>
-                <span>📦 Marcar como Entregado</span>
+            ` : `
+              <button class="btn-confirm-order-stock px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl flex items-center gap-1.5" data-id="${escapeHtml(order.id)}">
+                <i data-lucide="check-circle" class="w-3.5 h-3.5"></i><span>Finalizar pedido</span>
               </button>
-              <button 
-                class="btn-restore-order-stock px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1"
-                data-id="${escapeHtml(order.id)}"
-              >
-                <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
-                <span>Estornar Stock</span>
-              </button>
-            ` : isDelivered ? `
-              <span class="text-xs text-blue-700 font-bold flex items-center gap-1">
-                <span>📦</span> Entrega completada
-              </span>
-            ` : ''}
+            `}
+            <button class="btn-delete-order px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs rounded-xl flex items-center gap-1.5" data-id="${escapeHtml(order.id)}">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i><span>Excluir pedido</span>
+            </button>
           </div>
-
         </div>
       `;
     }).join('');
 
-    container.querySelectorAll('.btn-confirm-order-stock').forEach(btn => {
-      btn.addEventListener('click', () => confirmOrderStock(btn.dataset.id));
-    });
-
-    container.querySelectorAll('.btn-deliver-order').forEach(btn => {
-      btn.addEventListener('click', () => deliverOrder(btn.dataset.id));
-    });
-
-    container.querySelectorAll('.btn-restore-order-stock').forEach(btn => {
-      btn.addEventListener('click', () => restoreOrderStock(btn.dataset.id));
-    });
-
+    container.querySelectorAll('.btn-confirm-order-stock').forEach(btn => btn.addEventListener('click', () => confirmOrderStock(btn.dataset.id)));
+    container.querySelectorAll('.btn-unfinalize-order').forEach(btn => btn.addEventListener('click', () => markOrderUnfinalized(btn.dataset.id)));
+    container.querySelectorAll('.btn-edit-order').forEach(btn => btn.addEventListener('click', () => openEditOrderModal(btn.dataset.id)));
+    container.querySelectorAll('.btn-delete-order').forEach(btn => btn.addEventListener('click', () => deleteAdminOrder(btn.dataset.id)));
     refreshLucide();
+  }
+
+  function openEditOrderModal(orderId) {
+    const order = adminOrders.find(o => o.id === orderId);
+    if (!order) return;
+    document.getElementById('orderEditModal')?.remove();
+
+    const payment = canonicalOrderPayment(order);
+    const modal = document.createElement('div');
+    modal.id = 'orderEditModal';
+    modal.className = 'fixed inset-0 z-[80] bg-slate-900/60 flex items-center justify-center p-3 overflow-y-auto';
+    modal.innerHTML = `
+      <div class="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 my-auto overflow-hidden">
+        <div class="p-4 bg-slate-900 text-white flex items-center justify-between">
+          <div><p class="font-black text-sm">Editar pedido #${escapeHtml(order.id)}</p><p class="text-[10px] text-slate-300">Datos del cliente, entrega y pago</p></div>
+          <button type="button" id="closeOrderEditModal" class="w-8 h-8 rounded-full bg-slate-800">✕</button>
+        </div>
+        <form id="orderEditForm" class="p-4 space-y-3 text-xs">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div><label class="font-bold block mb-1">Nombre *</label><input id="editOrderName" required class="w-full px-3 py-2.5 border rounded-xl" value="${escapeHtml(order.customer.name || '')}"></div>
+            <div><label class="font-bold block mb-1">WhatsApp *</label><input id="editOrderPhone" required class="w-full px-3 py-2.5 border rounded-xl" value="${escapeHtml(order.customer.phone || '')}"></div>
+          </div>
+          <div><label class="font-bold block mb-1">Entrega *</label><select id="editOrderDelivery" class="w-full px-3 py-2.5 border rounded-xl"><option value="delivery" ${order.customer.deliveryType === 'delivery' ? 'selected' : ''}>Delivery</option><option value="pickup" ${order.customer.deliveryType === 'pickup' ? 'selected' : ''}>Retiro personal</option></select></div>
+          <div id="editOrderAddressWrap"><label class="font-bold block mb-1">Dirección / Ciudad *</label><input id="editOrderAddress" class="w-full px-3 py-2.5 border rounded-xl" value="${escapeHtml(order.customer.address || '')}"></div>
+          <div><label class="font-bold block mb-1">Forma de pago *</label><select id="editOrderPayment" class="w-full px-3 py-2.5 border rounded-xl"><option value="Transferencia bancaria" ${payment === 'Transferencia bancaria' ? 'selected' : ''}>Transferencia bancaria</option><option value="PIX" ${payment === 'PIX' ? 'selected' : ''}>PIX</option><option value="Efectivo en retiro" ${payment === 'Efectivo en retiro' ? 'selected' : ''}>Efectivo personalmente en el retiro</option></select></div>
+          <div><label class="font-bold block mb-1">Observaciones</label><textarea id="editOrderNotes" rows="2" class="w-full px-3 py-2.5 border rounded-xl">${escapeHtml(order.customer.notes || '')}</textarea></div>
+          <div class="flex gap-2 pt-2"><button type="button" id="cancelOrderEdit" class="flex-1 py-2.5 bg-slate-100 rounded-xl font-bold">Cancelar</button><button type="submit" class="flex-1 py-2.5 bg-[#FF2D8A] text-white rounded-xl font-black">Guardar cambios</button></div>
+        </form>
+      </div>
+    `;
+    document.body.appendChild(modal);
+
+    const delivery = modal.querySelector('#editOrderDelivery');
+    const paymentSelect = modal.querySelector('#editOrderPayment');
+    const addressWrap = modal.querySelector('#editOrderAddressWrap');
+    const addressInput = modal.querySelector('#editOrderAddress');
+
+    const syncFields = () => {
+      const pickup = delivery.value === 'pickup';
+      addressWrap.classList.toggle('hidden', pickup);
+      addressInput.required = !pickup;
+      const cash = Array.from(paymentSelect.options).find(opt => opt.value === 'Efectivo en retiro');
+      if (cash) cash.disabled = !pickup;
+      if (!pickup && paymentSelect.value === 'Efectivo en retiro') paymentSelect.value = 'Transferencia bancaria';
+    };
+    syncFields();
+    delivery.addEventListener('change', syncFields);
+
+    const close = () => modal.remove();
+    modal.querySelector('#closeOrderEditModal').addEventListener('click', close);
+    modal.querySelector('#cancelOrderEdit').addEventListener('click', close);
+    modal.addEventListener('click', e => { if (e.target === modal) close(); });
+
+    modal.querySelector('#orderEditForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const payload = {
+        name: modal.querySelector('#editOrderName').value.trim(),
+        phone: modal.querySelector('#editOrderPhone').value.trim(),
+        deliveryType: delivery.value,
+        address: addressInput.value.trim(),
+        paymentMethod: paymentSelect.value,
+        notes: modal.querySelector('#editOrderNotes').value.trim()
+      };
+      try {
+        const res = await fetch(`/api/admin/orders/${orderId}`, { method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify(payload) });
+        if (res.status === 401) { handleUnauthorized(); return; }
+        const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
+        if (!res.ok) throw new Error(data?.error || 'No se pudo editar el pedido.');
+        close();
+        showToast('Pedido actualizado.', 'success');
+        await loadAdminOrders();
+      } catch (err) {
+        showToast(err.message || 'No se pudo editar el pedido.', 'error');
+      }
+    });
+  }
+
+  async function markOrderUnfinalized(orderId) {
+    if (!authToken) return;
+    if (!confirm('¿Marcar este pedido como NO finalizado? Si el stock ya fue descontado, será devuelto automáticamente.')) return;
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}/unfinalize`, { method: 'POST', headers: getAuthHeaders() });
+      if (res.status === 401) { handleUnauthorized(); return; }
+      const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
+      if (!res.ok) throw new Error(data?.error || 'No se pudo actualizar el pedido.');
+      showToast('Pedido marcado como no finalizado. Stock restaurado.', 'success');
+      await loadProducts(); await loadAdminOrders(); await loadAdminStats(); await renderAdminProducts();
+    } catch (err) {
+      showToast(err.message || 'No se pudo actualizar el pedido.', 'error');
+    }
+  }
+
+  async function deleteAdminOrder(orderId) {
+    if (!authToken) return;
+    const order = adminOrders.find(o => o.id === orderId);
+    const finalized = order && (order.status === 'confirmed' || order.status === 'delivered');
+    const warning = finalized
+      ? 'Este pedido está finalizado. Al excluirlo, el stock será restaurado automáticamente. ¿Continuar?'
+      : '¿Excluir definitivamente este pedido?';
+    if (!confirm(warning)) return;
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}`, { method: 'DELETE', headers: getAuthHeaders() });
+      if (res.status === 401) { handleUnauthorized(); return; }
+      const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
+      if (!res.ok) throw new Error(data?.error || 'No se pudo excluir el pedido.');
+      showToast('Pedido excluido.', 'success');
+      await loadProducts(); await loadAdminOrders(); await loadAdminStats(); await renderAdminProducts();
+    } catch (err) {
+      showToast(err.message || 'No se pudo excluir el pedido.', 'error');
+    }
   }
 
   async function confirmOrderStock(orderId) {
@@ -3039,7 +3130,7 @@
       if (res.status === 401) { handleUnauthorized(); return; }
       const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
       if (!res.ok) throw new Error(data?.error || 'No se pudo confirmar la venta.');
-      showToast(`¡Venta #${orderId} confirmada! 🎉`, 'success');
+      showToast(`Pedido #${orderId} finalizado y stock descontado.`, 'success');
       await loadProducts();
       await loadAdminOrders();
       await loadAdminStats();
@@ -3129,7 +3220,7 @@
   function updatePendingOrdersBadge() {
     const badge = document.getElementById('pendingOrdersBadge');
     if (!badge) return;
-    const pendingCount = adminOrders.filter(o => o.status === 'pending').length;
+    const pendingCount = adminOrders.filter(o => o.status !== 'confirmed' && o.status !== 'delivered').length;
     badge.textContent = pendingCount;
     if (pendingCount > 0) {
       badge.classList.remove('hidden');

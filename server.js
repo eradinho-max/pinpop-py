@@ -841,6 +841,36 @@ app.get('/api/admin/orders', authenticateAdmin, async (req, res) => {
   }
 });
 
+// Admin: Edit order details
+app.put('/api/admin/orders/:id', authenticateAdmin, requirePersistentDatabase, async (req, res) => {
+  try {
+    const result = await db.updateOrderAdmin(req.params.id, req.body || {});
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Admin: Mark as not finalized; restore stock if it had been deducted
+app.post('/api/admin/orders/:id/unfinalize', authenticateAdmin, requirePersistentDatabase, async (req, res) => {
+  try {
+    const result = await db.markOrderUnfinalizedAdmin(req.params.id);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Admin: Permanently delete order; restores stock first when needed
+app.delete('/api/admin/orders/:id', authenticateAdmin, requirePersistentDatabase, async (req, res) => {
+  try {
+    const result = await db.deleteOrderAdmin(req.params.id);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Admin: Confirm order stock (Transactional deduction + audit trail)
 app.post('/api/admin/orders/:id/confirm-stock', authenticateAdmin, requirePersistentDatabase, async (req, res) => {
   try {

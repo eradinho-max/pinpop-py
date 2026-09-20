@@ -404,3 +404,53 @@ body {
     padding: 0.55rem !important;
   }
 }
+
+
+/* =========================================================
+   ADMIN PRODUCTS — visible inventory manager
+   ========================================================= */
+#adminContentSection {
+  min-height: 0;
+}
+
+#adminTabProducts.admin-products-tab:not(.hidden) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+#adminTabProducts > * {
+  flex-shrink: 0;
+}
+
+#adminProductsContainer.admin-products-scroll {
+  flex: 1 1 auto;
+  min-height: 180px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+  scrollbar-width: thin;
+}
+
+#adminProductsDesktopTable.admin-products-table {
+  min-width: 760px;
+}
+
+#adminProductsDesktopTable thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+@media (max-width: 639px) {
+  #adminTabProducts.admin-products-tab:not(.hidden) {
+    overflow: visible;
+  }
+
+  #adminProductsContainer.admin-products-scroll {
+    min-height: 0;
+    overflow: visible;
+  }
+}

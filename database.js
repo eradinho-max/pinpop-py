@@ -10,13 +10,14 @@ let db = null;
 let SQL = null;
 let pgPool = null;
 const isPostgres = Boolean(process.env.DATABASE_URL);
+const isNetlifyRuntime = process.env.NETLIFY === 'true';
 
-if (!isPostgres && !fs.existsSync(DB_DIR)) {
+if (!isPostgres && !isNetlifyRuntime && !fs.existsSync(DB_DIR)) {
   fs.mkdirSync(DB_DIR, { recursive: true });
 }
 
 function persistDb() {
-  if (isPostgres || !db) return;
+  if (isPostgres || isNetlifyRuntime || !db) return;
   try {
     const data = db.export();
     const buffer = Buffer.from(data);
@@ -85,7 +86,10 @@ async function initDatabase() {
       await pgPool.query(ddl);
     }
   } else {
-    SQL = await initSqlJs();
+    const wasmPath = require.resolve('sql.js/dist/sql-wasm.wasm');
+    SQL = await initSqlJs({
+      locateFile: (file) => file.endsWith('.wasm') ? wasmPath : file
+    });
 
     if (fs.existsSync(DB_FILE)) {
       try {

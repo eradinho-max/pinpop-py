@@ -5,6 +5,8 @@
    Tipografía: Poppins (Principal) & Sora (Display/Títulos)
    ==================================================================== */
 
+.hidden { display: none !important; }
+
 :root {
   --pinpop-pink: #FF2D8A;
   --pinpop-pink-hover: #E01E75;

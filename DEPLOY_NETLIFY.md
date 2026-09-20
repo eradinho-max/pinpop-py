@@ -70,3 +70,14 @@ Após o deploy:
 2. confirme que o catálogo aparece;
 3. abra `/api/products` e confirme que retorna JSON;
 4. somente depois configure e teste o Admin.
+
+
+## Verificación rápida después del deploy
+
+Abrí estas URLs en el navegador reemplazando `TU-SITIO`:
+
+- `https://TU-SITIO.netlify.app/` → debe mostrar la tienda.
+- `https://TU-SITIO.netlify.app/api/health` → debe devolver JSON con `"ok": true`.
+- `https://TU-SITIO.netlify.app/api/products` → debe devolver una lista JSON de productos.
+
+Si `/api/health` o `/api/products` devuelve error, revisá **Deploys > Functions > api > Logs** en Netlify.

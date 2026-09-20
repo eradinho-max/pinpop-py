@@ -6,6 +6,7 @@
 
   // --- STATE ---
   let products = [];
+  let catalogLoadFailed = false;
   let categories = [];
   let settings = {};
   let cart = []; // [{ id, quantity }]
@@ -66,6 +67,20 @@
     await loadCategories();
     await loadProducts();
     setupEventListeners();
+    const retryCatalogBtn = document.getElementById('retryCatalogBtn');
+    if (retryCatalogBtn) {
+      retryCatalogBtn.addEventListener('click', async () => {
+        retryCatalogBtn.disabled = true;
+        try {
+          await loadSettings();
+          await loadCategories();
+          await loadProducts();
+          renderAll();
+        } finally {
+          retryCatalogBtn.disabled = false;
+        }
+      });
+    }
     initImageZoom();
     initFastAddProductHandlers();
     initStockAdjustHandlers();
@@ -189,9 +204,11 @@
         throw new Error('Respuesta inválida del servidor.');
       }
       products = await res.json();
+      catalogLoadFailed = false;
     } catch (err) {
       console.error('Error cargando catálogo:', err);
       products = [];
+      catalogLoadFailed = true;
       showToast('No se pudo cargar el catálogo. Intentá nuevamente.', 'error');
     }
     updateTargetTabsCounts();
@@ -370,8 +387,20 @@
   function renderProducts() {
     const grid = document.getElementById('productGrid');
     const emptyState = document.getElementById('emptyState');
+    const errorState = document.getElementById('catalogErrorState');
     const resultsCount = document.getElementById('productResultsCount');
     const activeBadge = document.getElementById('activeCategoryBadge');
+
+    if (catalogLoadFailed) {
+      grid.classList.add('hidden');
+      if (emptyState) emptyState.classList.add('hidden');
+      if (errorState) errorState.classList.remove('hidden');
+      if (resultsCount) resultsCount.textContent = 'Catálogo temporalmente no disponible';
+      if (activeBadge) activeBadge.classList.add('hidden');
+      return;
+    }
+
+    if (errorState) errorState.classList.add('hidden');
 
     let filtered = products.filter(p => {
       if (!p.active) return false;

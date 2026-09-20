@@ -78,9 +78,10 @@ app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/images', express.static(path.join(__dirname, 'public/images')));
 
-// Ensure uploads folder exists
+// Ensure uploads folder exists only on traditional writable servers.
+// Netlify Functions use memory upload + persistent external Storage instead.
 const uploadsDir = path.join(__dirname, 'public/images/uploads');
-if (!fs.existsSync(uploadsDir)) {
+if (!isNetlifyRuntime && !fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
@@ -167,6 +168,17 @@ function authenticateAdmin(req, res, next) {
 // ==========================================
 // PUBLIC API ENDPOINTS
 // ==========================================
+
+
+// Health check for deployment diagnostics
+app.get('/api/health', async (req, res) => {
+  res.json({
+    ok: true,
+    runtime: isNetlifyRuntime ? 'netlify' : 'node',
+    database: process.env.DATABASE_URL ? 'postgres' : 'sqlite-readonly',
+    adminConfigured: Boolean(process.env.JWT_SECRET && process.env.ADMIN_PASSWORD)
+  });
+});
 
 // Get public catalog
 app.get('/api/products', async (req, res) => {

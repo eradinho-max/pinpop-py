@@ -29,7 +29,7 @@
 
   <!-- CSS e íconos locales: sin dependencias CDN en el camino crítico. -->
   <link rel="stylesheet" href="tailwind-built.css?v=2.2.2">
-  <link rel="stylesheet" href="style.css?v=2.3.2">
+  <link rel="stylesheet" href="style.css?v=2.3.5">
   <script src="vendor/icons.js?v=2.2.2"></script>
 </head>
 <body class="bg-[#F4F5F7] text-[#111111] font-sans min-h-screen flex flex-col antialiased selection:bg-[#FF2D8A] selection:text-white">
@@ -706,10 +706,10 @@
   <!-- ADMIN MODAL (LOGIN GATE + CONTROL PANEL + ERP) -->
   <!-- ======================================================== -->
   <div id="adminModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-6 overflow-y-auto">
-    <div class="bg-white w-full max-w-5xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[94vh]">
+    <div class="admin-modal-shell bg-white w-full max-w-5xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[94vh]">
       
       <!-- Top Bar with Official Logo -->
-      <div class="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-900 text-white shrink-0">
+      <div class="admin-modal-topbar p-4 border-b border-slate-200 flex items-center justify-between bg-slate-900 text-white shrink-0">
         <div class="flex items-center gap-2.5">
           <img src="images/brand/pinpop-logo-web.png" class="h-8 w-auto object-contain">
           <span class="font-display font-black text-xs sm:text-sm text-white">| Panel de Administración</span>
@@ -762,7 +762,7 @@
         <div id="admin2faSetupSection" class="hidden space-y-3 text-left">
           <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center space-y-3">
             <p class="text-xs font-bold text-slate-800">Primer acceso: activá la verificación en dos pasos</p>
-            <img id="admin2faQrImage" alt="QR Code para configurar autenticador" class="hidden w-52 h-52 mx-auto bg-white rounded-xl border border-slate-200 p-2" />
+            <img id="admin2faQrImage" alt="QR Code para configurar autenticador" class="admin-2fa-qr hidden mx-auto bg-white rounded-xl border border-slate-200 p-2" />
             <div>
               <p class="text-[11px] font-black text-slate-800 mb-1">1. Escaneá el QR con Google Authenticator o Microsoft Authenticator.</p>
               <p class="text-[10px] text-slate-500 mb-2">El escaneo solo agrega PINPOP al autenticador. <strong>No entra al panel automáticamente.</strong></p>
@@ -1614,6 +1614,6 @@
   </footer>
 
   <!-- Application Logic -->
-  <script src="app.js?v=2.3.2"></script>
+  <script src="app.js?v=2.3.5"></script>
 </body>
 </html>

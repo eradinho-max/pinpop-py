@@ -205,10 +205,10 @@ app.use('/images', express.static(path.join(__dirname, 'public/images')));
 // RATE LIMITING
 // ==========================================
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
+  windowMs: 10 * 60 * 1000,
+  max: 20,
   skipSuccessfulRequests: true,
-  message: { error: 'Demasiados intentos de acceso fallidos. Por favor, intente nuevamente en 15 minutos.' },
+  message: { error: 'Demasiados intentos de acceso fallidos. Aguarde unos minutos e intente nuevamente.' },
   standardHeaders: true,
   legacyHeaders: false
 });
@@ -540,9 +540,17 @@ app.post('/api/auth/setup/start', loginLimiter, async (req, res) => {
       });
     }
 
-    // First enrollment.
-    const secret = generateTotpSecret();
-    await db.beginAdminTotpSetup(fingerprint, secret);
+    // First enrollment. Reuse a pending secret instead of generating a new QR
+    // on every retry; this prevents a previously scanned authenticator entry
+    // from becoming invalid before confirmation.
+    let secret = '';
+    if (status.pending) {
+      secret = await db.getAdminTotpPending(fingerprint);
+    }
+    if (!secret) {
+      secret = generateTotpSecret();
+      await db.beginAdminTotpSetup(fingerprint, secret);
+    }
 
     const otpauthUri =
       `otpauth://totp/${encodeURIComponent('PINPOP:admin')}` +

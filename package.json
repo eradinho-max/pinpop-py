@@ -1,6 +1,6 @@
 {
   "name": "pinpop-store",
-  "version": "2.3.0",
+  "version": "2.3.3",
   "description": "PINPOP • Catálogo e Admin no Vercel com Blob privado, senha forte e 2FA",
   "main": "server.js",
   "scripts": {
@@ -33,6 +33,6 @@
     "@vercel/blob": "2.8.0"
   },
   "engines": {
-    "node": ">=22"
+    "node": "22.x"
   }
 }

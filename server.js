@@ -3,10 +3,10 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const multer = require('multer');
-const jwt = require('jsonwebtoken');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
+const QRCode = require('qrcode');
 
 const db = require('./database');
 const imageStorage = require('./storage');
@@ -20,20 +20,116 @@ const isNetlifyRuntime = process.env.NETLIFY === 'true';
 app.set('trust proxy', 1);
 
 // ==========================================
-// ENVIRONMENT & CREDENTIALS INTEGRITY
+// SIMPLE ADMIN SECURITY: PASSWORD + TOTP + HTTPONLY COOKIE
 // ==========================================
-let JWT_SECRET = process.env.JWT_SECRET || null;
 const isProduction = process.env.NODE_ENV === 'production' || process.env.NETLIFY === 'true';
 const configuredAdminPassword = process.env.ADMIN_PASSWORD || '';
-let adminSecurityReady = Boolean(JWT_SECRET && JWT_SECRET.length >= 32 && configuredAdminPassword.length >= 12);
+const adminPasswordReady = configuredAdminPassword.length >= 12;
+const SESSION_COOKIE = 'pinpop_admin_session';
+const SESSION_TTL_SECONDS = 8 * 60 * 60;
 
-if (!JWT_SECRET && !isProduction) {
-  JWT_SECRET = crypto.randomBytes(32).toString('hex');
-  console.warn('⚠️ AVISO [Desarrollo]: JWT_SECRET no configurado. Se generó clave temporal en memoria.');
+if (isProduction && !adminPasswordReady) {
+  console.warn('⚠️ PINPOP: Admin deshabilitado. Configure ADMIN_PASSWORD con al menos 12 caracteres.');
 }
 
-if (isProduction && !adminSecurityReady) {
-  console.warn('⚠️ PINPOP: Admin deshabilitado. En producción, JWT_SECRET debe tener ≥32 caracteres y ADMIN_PASSWORD ≥12 caracteres.');
+function adminPasswordFingerprint() {
+  return crypto.createHash('sha256').update(`pinpop-admin-v2|${configuredAdminPassword}`).digest('hex');
+}
+
+function base32Encode(buffer) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for (const byte of buffer) bits += byte.toString(2).padStart(8, '0');
+  let output = '';
+  for (let i = 0; i < bits.length; i += 5) {
+    const chunk = bits.slice(i, i + 5).padEnd(5, '0');
+    output += alphabet[parseInt(chunk, 2)];
+  }
+  return output;
+}
+
+function generateTotpSecret() {
+  return base32Encode(crypto.randomBytes(20));
+}
+
+function base32Decode(input) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for (const ch of String(input || '').replace(/=+$/g, '').toUpperCase()) {
+    const idx = alphabet.indexOf(ch);
+    if (idx < 0) throw new Error('TOTP secret inválido.');
+    bits += idx.toString(2).padStart(5, '0');
+  }
+  const bytes = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) bytes.push(parseInt(bits.slice(i, i + 8), 2));
+  return Buffer.from(bytes);
+}
+
+function generateTotp(secret, timeMs = Date.now()) {
+  const counter = Math.floor(timeMs / 30000);
+  const msg = Buffer.alloc(8);
+  msg.writeBigUInt64BE(BigInt(counter));
+  const digest = crypto.createHmac('sha1', base32Decode(secret)).update(msg).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const code = ((digest[offset] & 0x7f) << 24) | ((digest[offset + 1] & 0xff) << 16) | ((digest[offset + 2] & 0xff) << 8) | (digest[offset + 3] & 0xff);
+  return String(code % 1000000).padStart(6, '0');
+}
+
+function verifyTotp(token, secret) {
+  const clean = String(token || '').replace(/\D/g, '');
+  if (!/^\d{6}$/.test(clean)) return false;
+  for (const drift of [-30000, 0, 30000]) {
+    if (crypto.timingSafeEqual(Buffer.from(clean), Buffer.from(generateTotp(secret, Date.now() + drift)))) return true;
+  }
+  return false;
+}
+
+function timingSafeTextEqual(a, b) {
+  const ah = crypto.createHash('sha256').update(String(a || '')).digest();
+  const bh = crypto.createHash('sha256').update(String(b || '')).digest();
+  return crypto.timingSafeEqual(ah, bh);
+}
+
+function sessionSigningKey() {
+  return crypto.createHash('sha256').update(`${configuredAdminPassword}|pinpop-session-v2`).digest();
+}
+
+function createSessionToken() {
+  const payload = Buffer.from(JSON.stringify({ sub: 'admin', exp: Date.now() + SESSION_TTL_SECONDS * 1000 })).toString('base64url');
+  const sig = crypto.createHmac('sha256', sessionSigningKey()).update(payload).digest('base64url');
+  return `${payload}.${sig}`;
+}
+
+function verifySessionToken(token) {
+  try {
+    const [payload, sig] = String(token || '').split('.');
+    if (!payload || !sig) return false;
+    const expected = crypto.createHmac('sha256', sessionSigningKey()).update(payload).digest('base64url');
+    const a = Buffer.from(sig), b = Buffer.from(expected);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+    const data = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    return data.sub === 'admin' && Number(data.exp) > Date.now();
+  } catch (_) { return false; }
+}
+
+function readCookie(req, name) {
+  const cookies = String(req.headers.cookie || '').split(';');
+  for (const item of cookies) {
+    const idx = item.indexOf('=');
+    if (idx < 0) continue;
+    if (item.slice(0, idx).trim() === name) return decodeURIComponent(item.slice(idx + 1).trim());
+  }
+  return null;
+}
+
+function setAdminSessionCookie(res) {
+  const secure = isProduction ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(createSessionToken())}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_TTL_SECONDS}${secure}`);
+}
+
+function clearAdminSessionCookie(res) {
+  const secure = isProduction ? '; Secure' : '';
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
 }
 
 // ==========================================
@@ -46,7 +142,7 @@ app.use(helmet({
       scriptSrc: ["'self'"],
       styleSrc: ["'self'", "'unsafe-inline'"],
       fontSrc: ["'self'"],
-      imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co", "https://*.supabase.in"],
+      imgSrc: ["'self'", "data:", "blob:"],
       connectSrc: ["'self'"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
@@ -190,38 +286,18 @@ async function cleanupRemovedManagedImages(oldProduct, newProduct) {
 }
 
 // ==========================================
-// JWT AUTHENTICATION MIDDLEWARE
+// ADMIN SESSION MIDDLEWARE
 // ==========================================
 async function authenticateAdmin(req, res, next) {
-  if (isNetlifyRuntime && !process.env.DATABASE_URL) {
-    return res.status(503).json({ error: 'Admin deshabilitado en Netlify hasta configurar DATABASE_URL.' });
+  if (!adminPasswordReady) {
+    return res.status(503).json({ error: 'Administración no configurada. Defina ADMIN_PASSWORD.' });
   }
-  if (!adminSecurityReady) {
-    return res.status(503).json({ error: 'Administración no configurada de forma segura en el servidor.' });
+  const token = readCookie(req, SESSION_COOKIE);
+  if (!verifySessionToken(token)) {
+    return res.status(401).json({ error: 'Sesión inválida o expirada.' });
   }
-  try {
-    await ensureDatabaseReady();
-  } catch (err) {
-    console.error('PINPOP database unavailable for admin:', err.message);
-    return res.status(503).json({ error: 'Base de datos no disponible temporalmente.' });
-  }
-
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: 'Acceso no autorizado: Token Bearer requerido.' });
-  }
-
-  const token = authHeader.split(' ')[1];
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    if (decoded && decoded.role === 'admin') {
-      req.user = decoded;
-      return next();
-    }
-    return res.status(403).json({ error: 'Permisos insuficientes para esta operación.' });
-  } catch (err) {
-    return res.status(401).json({ error: 'Token inválido o expirado. Inicie sesión nuevamente.' });
-  }
+  req.user = { username: 'admin', role: 'admin' };
+  return next();
 }
 
 // ==========================================
@@ -237,15 +313,23 @@ app.get('/api/health', async (req, res) => {
     await ensureDatabaseReady();
     databaseHealthy = true;
   } catch (err) {
-    databaseError = err && err.message ? err.message : 'Database initialization failed';
+    databaseError = err && err.message ? err.message : 'Storage initialization failed';
+  }
+  let totpConfigured = false;
+  if (databaseHealthy && adminPasswordReady) {
+    try {
+      const status = await db.syncAdminSecurity(adminPasswordFingerprint());
+      totpConfigured = Boolean(status.totpEnabled);
+    } catch (_) {}
   }
   res.status(200).json({
     ok: true,
     runtime: isNetlifyRuntime ? 'netlify' : 'node',
-    database: process.env.DATABASE_URL ? 'postgres' : (isNetlifyRuntime ? 'fallback-public' : 'sqlite'),
+    database: isNetlifyRuntime ? 'netlify-blobs' : 'memory-dev',
     databaseHealthy,
-    publicCatalogSource: databaseHealthy ? 'database' : 'bundled-readonly-fallback',
-    adminConfigured: adminSecurityReady && databaseHealthy && (!isNetlifyRuntime || Boolean(process.env.DATABASE_URL)),
+    publicCatalogSource: databaseHealthy ? 'netlify-blobs' : 'bundled-readonly-fallback',
+    adminConfigured: adminPasswordReady && databaseHealthy,
+    totpConfigured,
     databaseError: databaseHealthy ? null : databaseError
   });
 });
@@ -254,10 +338,10 @@ async function publicDataOrFallback(dbGetter, fallbackValue, res, label) {
   try {
     await ensureDatabaseReady();
     const value = await dbGetter();
-    res.setHeader('X-PINPOP-Data-Source', 'database');
+    res.setHeader('X-PINPOP-Data-Source', 'netlify-blobs');
     return value;
   } catch (err) {
-    console.error(`PINPOP ${label} database fallback:`, err.message);
+    console.error(`PINPOP ${label} storage fallback:`, err.message);
     res.setHeader('X-PINPOP-Data-Source', 'bundled-readonly-fallback');
     res.setHeader('X-PINPOP-Degraded', '1');
     return typeof fallbackValue === 'function' ? fallbackValue() : fallbackValue;
@@ -267,13 +351,13 @@ async function publicDataOrFallback(dbGetter, fallbackValue, res, label) {
 // Public browsing remains available during a database outage.
 // Writes, Admin and order creation remain fail-closed.
 app.get('/api/products', async (req, res) => {
-  res.setHeader('X-PINPOP-Orders-Ready', (!isNetlifyRuntime || Boolean(process.env.DATABASE_URL)) ? '1' : '0');
   const products = await publicDataOrFallback(
     () => db.getPublicProducts(),
     fallbackData.products,
     res,
     'catalog'
   );
+  res.setHeader('X-PINPOP-Orders-Ready', res.getHeader('X-PINPOP-Degraded') === '1' ? '0' : '1');
   res.json(products);
 });
 
@@ -413,66 +497,115 @@ app.post('/api/orders', orderLimiter, requirePersistentDatabase, async (req, res
 // ==========================================
 // AUTHENTICATION ENDPOINTS
 // ==========================================
-
-// Admin Login (Rate-limited: 5 failed attempts / 15 min)
-app.post('/api/auth/login', loginLimiter, async (req, res) => {
-  if (isNetlifyRuntime && !process.env.DATABASE_URL) {
-    return res.status(503).json({ error: 'Admin deshabilitado en Netlify hasta configurar DATABASE_URL.' });
+app.get('/api/auth/setup-status', loginLimiter, async (req, res) => {
+  if (!adminPasswordReady) {
+    return res.status(200).json({ passwordConfigured: false, totpConfigured: false, setupRequired: true });
   }
-  if (!adminSecurityReady) {
-    return res.status(503).json({ error: 'Administración no configurada de forma segura. JWT_SECRET ≥32 y ADMIN_PASSWORD ≥12.' });
-  }
-
   try {
     await ensureDatabaseReady();
+    const status = await db.syncAdminSecurity(adminPasswordFingerprint());
+    return res.json({ passwordConfigured: true, totpConfigured: Boolean(status.totpEnabled), setupRequired: !status.totpEnabled });
   } catch (err) {
-    console.error('PINPOP login database error:', err.message);
-    return res.status(503).json({ error: 'Base de datos no disponible temporalmente.' });
+    console.error('PINPOP 2FA status error:', err.message);
+    return res.status(503).json({ error: 'Almacenamiento temporalmente no disponible.' });
   }
+});
 
-  const { password } = req.body;
-  if (!password) {
-    return res.status(400).json({ error: 'Contraseña requerida.' });
+app.post('/api/auth/setup/start', loginLimiter, async (req, res) => {
+  if (!adminPasswordReady) {
+    return res.status(503).json({ error: 'Configure ADMIN_PASSWORD en Netlify antes del primer acceso.' });
   }
-
-  const isValid = await db.verifyAdminPassword(password);
-  if (!isValid) {
+  const { password } = req.body || {};
+  if (!password) return res.status(400).json({ error: 'La contraseña es obligatoria.' });
+  if (!timingSafeTextEqual(password, configuredAdminPassword)) {
     return res.status(401).json({ error: 'Contraseña incorrecta.' });
   }
-
-  const token = jwt.sign(
-    { role: 'admin', user: 'admin' },
-    JWT_SECRET,
-    { expiresIn: '8h' }
-  );
-
-  res.json({
-    token,
-    expiresIn: '8h',
-    user: { username: 'admin', role: 'admin' }
-  });
+  try {
+    await ensureDatabaseReady();
+    const fingerprint = adminPasswordFingerprint();
+    const status = await db.syncAdminSecurity(fingerprint);
+    if (status.totpEnabled) return res.status(409).json({ error: 'El 2FA ya está configurado. Inicie sesión normalmente.' });
+    const secret = generateTotpSecret();
+    await db.beginAdminTotpSetup(fingerprint, secret);
+    const otpauthUri = `otpauth://totp/${encodeURIComponent('PINPOP:admin')}?secret=${secret}&issuer=${encodeURIComponent('PINPOP')}&algorithm=SHA1&digits=6&period=30`;
+    const qrDataUrl = await QRCode.toDataURL(otpauthUri, { width: 240, margin: 1, errorCorrectionLevel: 'M' });
+    return res.json({ setupRequired: true, qrDataUrl, manualKey: secret, account: 'PINPOP:admin' });
+  } catch (err) {
+    console.error('PINPOP 2FA setup start error:', err.message);
+    return res.status(503).json({ error: 'No se pudo iniciar la configuración 2FA.' });
+  }
 });
 
-// Verify current token
-app.get('/api/auth/verify', authenticateAdmin, (req, res) => {
-  res.json({ valid: true, user: req.user });
+app.post('/api/auth/setup/confirm', loginLimiter, async (req, res) => {
+  if (!adminPasswordReady) return res.status(503).json({ error: 'Admin no configurado.' });
+  const { password, totp } = req.body || {};
+  if (!password || !totp) return res.status(400).json({ error: 'Contraseña y código 2FA son obligatorios.' });
+  if (!timingSafeTextEqual(password, configuredAdminPassword)) {
+    return res.status(401).json({ error: 'Contraseña incorrecta.' });
+  }
+  try {
+    await ensureDatabaseReady();
+    const fingerprint = adminPasswordFingerprint();
+    await db.syncAdminSecurity(fingerprint);
+    const pendingSecret = await db.getAdminTotpPending(fingerprint);
+    if (!pendingSecret) return res.status(409).json({ error: 'No hay una configuración 2FA pendiente. Comience nuevamente.' });
+    if (!verifyTotp(totp, pendingSecret)) return res.status(401).json({ error: 'Código 2FA incorrecto. Verifique la hora del celular e intente nuevamente.' });
+    await db.confirmAdminTotpSetup(fingerprint, pendingSecret);
+    setAdminSessionCookie(res);
+    return res.json({ authenticated: true, configured: true, expiresIn: '8h', user: { username: 'admin', role: 'admin' } });
+  } catch (err) {
+    console.error('PINPOP 2FA setup confirm error:', err.message);
+    return res.status(503).json({ error: 'No se pudo confirmar la configuración 2FA.' });
+  }
+});
+
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
+  if (!adminPasswordReady) {
+    return res.status(503).json({ error: 'Admin no configurado. Defina ADMIN_PASSWORD en Netlify.' });
+  }
+  const { password, totp } = req.body || {};
+  if (!password || !totp) return res.status(400).json({ error: 'Contraseña y código 2FA son obligatorios.' });
+  if (!timingSafeTextEqual(password, configuredAdminPassword)) {
+    return res.status(401).json({ error: 'Contraseña o código 2FA incorrecto.' });
+  }
+  try {
+    await ensureDatabaseReady();
+    const fingerprint = adminPasswordFingerprint();
+    const status = await db.syncAdminSecurity(fingerprint);
+    if (!status.totpEnabled) {
+      return res.status(428).json({ error: 'El 2FA todavía no está configurado.', setupRequired: true });
+    }
+    const secret = await db.getAdminTotpSecret(fingerprint);
+    if (!secret || !verifyTotp(totp, secret)) {
+      return res.status(401).json({ error: 'Contraseña o código 2FA incorrecto.' });
+    }
+    setAdminSessionCookie(res);
+    return res.json({ authenticated: true, expiresIn: '8h', user: { username: 'admin', role: 'admin' } });
+  } catch (err) {
+    console.error('PINPOP login error:', err.message);
+    return res.status(503).json({ error: 'Almacenamiento temporalmente no disponible.' });
+  }
+});
+
+app.get('/api/auth/session', authenticateAdmin, (req, res) => {
+  res.json({ authenticated: true, user: req.user });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  clearAdminSessionCookie(res);
+  res.json({ success: true });
 });
 
 // ==========================================
-// PERSISTENCE GUARD
+// PERSISTENCE GUARD — Netlify Blobs
 // ==========================================
 async function requirePersistentDatabase(req, res, next) {
-  if (process.env.NETLIFY === 'true' && !process.env.DATABASE_URL) {
-    return res.status(503).json({
-      error: 'Base persistente no configurada. En Netlify, defina DATABASE_URL antes de modificar catálogo, stock o pedidos.'
-    });
-  }
   try {
     await ensureDatabaseReady();
     return next();
   } catch (err) {
-    console.error('PINPOP persistent database error:', err.message);
-    return res.status(503).json({ error: 'Base de datos persistente no disponible temporalmente.' });
+    console.error('PINPOP storage error:', err.message);
+    return res.status(503).json({ error: 'Almacenamiento persistente no disponible temporalmente.' });
   }
 }
 
@@ -718,16 +851,21 @@ app.put('/api/admin/settings', authenticateAdmin, requirePersistentDatabase, asy
 });
 
 // Admin: Change password
-app.post('/api/admin/change-password', authenticateAdmin, requirePersistentDatabase, async (req, res) => {
+app.post('/api/admin/change-password', authenticateAdmin, (req, res) => {
+  res.status(409).json({ error: 'La contraseña se administra en Netlify mediante ADMIN_PASSWORD. Cambie la variable y haga un nuevo deploy.' });
+});
+
+// Public media stored in Netlify Blobs. Long cache because every upload uses a unique key.
+app.get('/api/media/:id', async (req, res) => {
   try {
-    const { newPassword } = req.body;
-    if (!newPassword || newPassword.length < 12) {
-      return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 12 caracteres.' });
-    }
-    await db.updateAdminPassword(newPassword);
-    res.json({ success: true, message: 'Contraseña actualizada con éxito.' });
+    const media = await imageStorage.getImageById(req.params.id);
+    if (!media) return res.status(404).end();
+    res.setHeader('Content-Type', media.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    return res.send(media.buffer);
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    console.error('PINPOP media read error:', err.message);
+    return res.status(404).end();
   }
 });
 

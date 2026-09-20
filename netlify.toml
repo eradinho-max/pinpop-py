@@ -8,8 +8,7 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  external_node_modules = ["express", "serverless-http", "sql.js", "pg", "bcryptjs", "jsonwebtoken", "multer", "helmet", "express-rate-limit", "cors", "@supabase/supabase-js"]
-  included_files = ["data/**", "schema.sql", "node_modules/sql.js/dist/sql-wasm.wasm"]
+  external_node_modules = ["express", "serverless-http", "multer", "helmet", "express-rate-limit", "cors", "@netlify/blobs"]
 
 [[redirects]]
   from = "/api/*"

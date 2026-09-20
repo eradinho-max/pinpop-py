@@ -729,8 +729,8 @@
       <div id="adminLoginGate" class="p-8 max-w-sm mx-auto w-full my-auto text-center space-y-4">
         <img src="images/brand/pinpop-logo-web.png" class="h-12 w-auto object-contain mx-auto">
         <div>
-          <h3 class="font-display font-black text-lg text-slate-900">Acceso Administrativo</h3>
-          <p class="text-xs text-slate-500 mt-1">Ingresá la contraseña protegida con autenticación Bearer JWT.</p>
+          <h3 id="adminAuthTitle" class="font-display font-black text-lg text-slate-900">Acceso Administrativo</h3>
+          <p id="adminAuthDescription" class="text-xs text-slate-500 mt-1">Ingresá tu contraseña y el código de 6 dígitos del autenticador.</p>
         </div>
         <form id="adminLoginForm" class="space-y-3">
           <input 
@@ -740,13 +740,53 @@
             placeholder="Contraseña de administrador"
             class="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25 focus:border-[#FF2D8A]"
           />
+          <input
+            type="text"
+            id="adminTotpInput"
+            required
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            maxlength="6"
+            pattern="[0-9]{6}"
+            placeholder="Código 2FA (6 dígitos)"
+            class="w-full px-3.5 py-2.5 text-xs tracking-[0.3em] text-center font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25 focus:border-[#FF2D8A]"
+          />
           <button 
+            id="adminLoginSubmitBtn"
             type="submit" 
             class="btn-pinpop-primary w-full py-2.5 font-black text-xs rounded-xl shadow"
           >
             Ingresar al Panel
           </button>
         </form>
+
+        <div id="admin2faSetupSection" class="hidden space-y-3 text-left">
+          <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-center space-y-3">
+            <p class="text-xs font-bold text-slate-800">Primer acceso: activá la verificación en dos pasos</p>
+            <img id="admin2faQrImage" alt="QR Code para configurar autenticador" class="hidden w-52 h-52 mx-auto bg-white rounded-xl border border-slate-200 p-2" />
+            <div>
+              <p class="text-[10px] text-slate-500 mb-1">Escaneá el QR con Google Authenticator o Microsoft Authenticator.</p>
+              <p class="text-[10px] text-slate-500">Si no podés escanear, usá esta clave:</p>
+              <code id="admin2faManualKey" class="block mt-1 px-2 py-2 rounded-lg bg-white border border-slate-200 text-[11px] font-bold tracking-wider break-all text-slate-800"></code>
+            </div>
+          </div>
+          <input
+            type="text"
+            id="admin2faSetupCodeInput"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            maxlength="6"
+            pattern="[0-9]{6}"
+            placeholder="Código de 6 dígitos"
+            class="w-full px-3.5 py-2.5 text-xs tracking-[0.3em] text-center font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25 focus:border-[#FF2D8A]"
+          />
+          <button id="admin2faConfirmBtn" type="button" class="btn-pinpop-primary w-full py-2.5 font-black text-xs rounded-xl shadow">
+            Confirmar y entrar
+          </button>
+          <button id="admin2faRestartBtn" type="button" class="w-full py-2 text-[11px] font-bold text-slate-500 hover:text-slate-800">
+            Volver a empezar
+          </button>
+        </div>
       </div>
 
       <!-- Admin Panel Content (Protected) -->
@@ -1075,23 +1115,10 @@
             </button>
           </form>
 
-          <!-- Password Change Section -->
+          <!-- Security configuration -->
           <div class="border-t border-slate-200 pt-6">
-            <h4 class="font-display font-black text-sm text-slate-900 mb-2">
-              Seguridad: Cambiar Contraseña Administrativa
-            </h4>
-            <form id="adminChangePasswordForm" class="space-y-3">
-              <input 
-                type="password" 
-                id="adminNewPasswordInput" 
-                required 
-                minlength="12" placeholder="Nueva contraseña (mínimo 12 caracteres)"
-                class="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
-              />
-              <button type="submit" class="btn-pinpop-dark px-4 py-2 font-bold text-xs rounded-xl shadow">
-                Actualizar Contraseña
-              </button>
-            </form>
+            <h4 class="font-display font-black text-sm text-slate-900 mb-2">Seguridad del acceso</h4>
+            <p class="text-xs text-slate-500 leading-relaxed">La contraseña y el 2FA se administran en las variables protegidas del Netlify. El panel no guarda ni muestra esas credenciales.</p>
           </div>
         </div>
 

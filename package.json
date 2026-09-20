@@ -1,7 +1,7 @@
 {
   "name": "pinpop-store",
-  "version": "2.1.0",
-  "description": "PINPOP • Catálogo de Pins para Crocs con WhatsApp y Mini-ERP de Stock",
+  "version": "2.2.1",
+  "description": "PINPOP • Catálogo de pins con WhatsApp, stock y Admin con 2FA autoconfigurable sobre Netlify Blobs",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -23,18 +23,15 @@
   "author": "PINPOP",
   "license": "ISC",
   "dependencies": {
-    "bcryptjs": "3.0.3",
+    "@netlify/blobs": "11.1.0",
     "cors": "2.8.6",
     "dotenv": "18.0.1",
     "express": "5.2.1",
     "express-rate-limit": "8.7.0",
     "helmet": "8.3.0",
-    "jsonwebtoken": "9.0.3",
     "multer": "2.4.0",
-    "pg": "8.23.0",
-    "sql.js": "1.14.2",
     "serverless-http": "3.2.0",
-    "@supabase/supabase-js": "2.116.0"
+    "qrcode": "1.5.4"
   },
   "engines": {
     "node": ">=22"

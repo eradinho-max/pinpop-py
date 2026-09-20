@@ -1,116 +1,24 @@
-const initSqlJs = require('sql.js');
-const fs = require('fs');
-const path = require('path');
-const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const fallbackData = require('./fallback-data');
 
-const DB_DIR = path.join(__dirname, 'data');
-const DB_FILE = process.env.DATABASE_PATH || path.join(DB_DIR, 'pinpop.sqlite');
+const STORE_NAME = 'pinpop-data';
+const STATE_KEY = 'state-v1';
+let localState = null;
+let storePromise = null;
 
-let db = null;
-let SQL = null;
-let pgPool = null;
-const isPostgres = Boolean(process.env.DATABASE_URL);
-const isNetlifyRuntime = process.env.NETLIFY === 'true';
-
-if (!isPostgres && !isNetlifyRuntime && !fs.existsSync(DB_DIR)) {
-  fs.mkdirSync(DB_DIR, { recursive: true });
-}
-
-function persistDb() {
-  if (isPostgres || isNetlifyRuntime || !db) return;
-  try {
-    const data = db.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(DB_FILE, buffer);
-  } catch (err) {
-    console.error('Error al persistir SQLite:', err);
-  }
-}
-
-// Convert '?' placeholders to '$1, $2, ...' for PostgreSQL queries.
-// node-postgres uses unnamed statements here, which is compatible with Supavisor transaction mode.
-function toPgSql(sql) {
-  let idx = 1;
-  return sql.replace(/\?/g, () => `$${idx++}`);
-}
-
-async function queryAll(sql, params = [], pgClient = null) {
-  if (isPostgres) {
-    const executor = pgClient || pgPool;
-    const res = await executor.query(toPgSql(sql), params);
-    return res.rows;
-  }
-  const stmt = db.prepare(sql);
-  stmt.bind(params);
-  const rows = [];
-  while (stmt.step()) {
-    rows.push(stmt.getAsObject());
-  }
-  stmt.free();
-  return rows;
-}
-
-async function queryOne(sql, params = [], pgClient = null) {
-  const rows = await queryAll(sql, params, pgClient);
-  return rows.length > 0 ? rows[0] : null;
-}
-
-async function runSql(sql, params = [], pgClient = null) {
-  if (isPostgres) {
-    const executor = pgClient || pgPool;
-    return await executor.query(toPgSql(sql), params);
-  }
-  db.run(sql, params);
-  return null;
-}
-
-// Guarantee that every PostgreSQL transaction uses one physical pooled connection.
-// SQLite keeps the same semantics on its single in-memory connection.
-async function withTransaction(work) {
-  if (isPostgres) {
-    const client = await pgPool.connect();
-    try {
-      await client.query('BEGIN');
-      const tx = {
-        queryAll: (sql, params = []) => queryAll(sql, params, client),
-        queryOne: (sql, params = []) => queryOne(sql, params, client),
-        runSql: (sql, params = []) => runSql(sql, params, client)
-      };
-      const result = await work(tx);
-      await client.query('COMMIT');
-      return result;
-    } catch (err) {
-      try { await client.query('ROLLBACK'); } catch (_) {}
-      throw err;
-    } finally {
-      client.release();
-    }
-  }
-
-  db.run('BEGIN TRANSACTION;');
-  try {
-    const tx = { queryAll, queryOne, runSql };
-    const result = await work(tx);
-    db.run('COMMIT;');
-    persistDb();
-    return result;
-  } catch (err) {
-    try { db.run('ROLLBACK;'); } catch (_) {}
-    throw err;
-  }
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
 }
 
 function randomId(prefix) {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 
-// Sanitize user-provided text strings (removes HTML tags and dangerous control characters WITHOUT double-encoding entities)
 function sanitizeString(str, maxLen = 255) {
   if (typeof str !== 'string') return '';
   return str
-    .replace(/<[^>]*>?/gm, '') // Strip HTML tags
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove ASCII control characters
+    .replace(/<[^>]*>?/gm, '')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
     .trim()
     .substring(0, maxLen);
 }
@@ -125,8 +33,8 @@ function normalizeProductImageUrl(value, required = false) {
   if (/^(javascript|file|vbscript):/i.test(url)) throw new Error('URL de imagen no permitida.');
   if (/^https:\/\//i.test(url)) return url;
   const local = url.replace(/^\//, '');
-  if (local.startsWith('images/') && !local.includes('..') && /^[A-Za-z0-9_./-]+$/.test(local)) {
-    return url.startsWith('/') ? `/${local}` : local;
+  if ((local.startsWith('images/') || local.startsWith('api/media/')) && !local.includes('..') && /^[A-Za-z0-9_./?=&%-]+$/.test(local)) {
+    return url.startsWith('/') ? `/${local}` : `/${local}`;
   }
   throw new Error('La imagen debe provenir del almacenamiento PINPOP o usar una URL HTTPS válida.');
 }
@@ -143,13 +51,9 @@ function normalizeGalleryImages(values, mainImage = '') {
 }
 
 const DEFAULT_WHATSAPP_NUMBER = '595991950031';
-const LEGACY_PLACEHOLDER_WHATSAPP = '595981234567';
-
 function normalizeParaguayWhatsapp(value) {
   let digits = String(value || '').replace(/\D/g, '');
-  // International +595 must not include the domestic trunk prefix 0.
   if (digits.startsWith('5950')) digits = '595' + digits.slice(4);
-  // Domestic format 09XX... -> +595 9XX...
   if (digits.startsWith('0') && digits.length === 10) digits = '595' + digits.slice(1);
   if (digits.startsWith('9') && digits.length === 9) digits = '595' + digits;
   if (!/^5959\d{8}$/.test(digits)) {
@@ -158,736 +62,264 @@ function normalizeParaguayWhatsapp(value) {
   return digits;
 }
 
-async function initDatabase() {
-  if (isPostgres) {
-    const { Pool } = require('pg');
-    const poolMax = Math.max(1, Number(process.env.PG_POOL_MAX || (isNetlifyRuntime ? 1 : 5)));
-    pgPool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false },
-      max: poolMax,
-      idleTimeoutMillis: 10000,
-      connectionTimeoutMillis: 10000,
-      allowExitOnIdle: true
-    });
-
-    // Fail fast if the DATABASE_URL is invalid.
-    await pgPool.query('SELECT 1');
-    console.log(`✓ Conexión establecida con PostgreSQL / Supabase (pool max=${poolMax}).`);
-    
-    // Execute idempotent DDL schema on PostgreSQL if needed.
-    const schemaPath = path.join(__dirname, 'schema.sql');
-    if (fs.existsSync(schemaPath)) {
-      const ddl = fs.readFileSync(schemaPath, 'utf8');
-      await pgPool.query(ddl);
-    }
-
-    // Keep the human-friendly order sequence ahead of any previously imported P#### ids.
-    await pgPool.query(`
-      SELECT setval(
-        'pinpop_order_number_seq',
-        GREATEST(
-          1000,
-          (SELECT last_value FROM pinpop_order_number_seq),
-          COALESCE((SELECT MAX(SUBSTRING(id FROM 2)::BIGINT) FROM orders WHERE id ~ '^P[0-9]+$'), 1000)
-        ),
-        true
-      )
-    `);
-  } else {
-    const wasmPath = require.resolve('sql.js/dist/sql-wasm.wasm');
-    SQL = await initSqlJs({
-      locateFile: (file) => file.endsWith('.wasm') ? wasmPath : file
-    });
-
-    if (fs.existsSync(DB_FILE)) {
-      try {
-        const fileBuffer = fs.readFileSync(DB_FILE);
-        db = new SQL.Database(fileBuffer);
-        console.log('✓ Base de datos SQLite cargada desde:', DB_FILE);
-      } catch (e) {
-        console.warn('Error leyendo archivo SQLite, creando nueva base:', e.message);
-        db = new SQL.Database();
-      }
-    } else {
-      db = new SQL.Database();
-      console.log('✓ Nueva base de datos SQLite inicializada.');
-    }
-
-    // SQLite Schema
-    db.run(`
-      CREATE TABLE IF NOT EXISTS products (
-        id TEXT PRIMARY KEY,
-        sku TEXT UNIQUE NOT NULL,
-        name TEXT NOT NULL,
-        category TEXT NOT NULL,
-        target_type TEXT NOT NULL DEFAULT 'crocs', -- 'crocs' o 'estetoscopio'
-        price INTEGER NOT NULL,
-        promo_price INTEGER,
-        cost_price INTEGER NOT NULL DEFAULT 0,
-        stock INTEGER NOT NULL DEFAULT 0,
-        min_stock INTEGER NOT NULL DEFAULT 3,
-        image TEXT NOT NULL,
-        description TEXT,
-        badge TEXT,
-        sales_count INTEGER NOT NULL DEFAULT 0,
-        active INTEGER NOT NULL DEFAULT 1,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS orders (
-        id TEXT PRIMARY KEY,
-        customer_name TEXT NOT NULL,
-        customer_phone TEXT NOT NULL,
-        delivery_type TEXT NOT NULL,
-        address TEXT,
-        payment_method TEXT,
-        notes TEXT,
-        subtotal INTEGER NOT NULL,
-        delivery_fee INTEGER NOT NULL,
-        total INTEGER NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending', -- pending, confirmed, delivered, cancelled
-        stock_deducted INTEGER NOT NULL DEFAULT 0,
-        confirmed_at TEXT,
-        delivered_at TEXT,
-        cancelled_at TEXT,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS order_items (
-        id TEXT PRIMARY KEY,
-        order_id TEXT NOT NULL,
-        product_id TEXT NOT NULL,
-        product_name TEXT NOT NULL,
-        sku TEXT,
-        price INTEGER NOT NULL,
-        quantity INTEGER NOT NULL,
-        line_total INTEGER NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS stock_movements (
-        id TEXT PRIMARY KEY,
-        product_id TEXT NOT NULL,
-        sku TEXT,
-        product_name TEXT NOT NULL,
-        type TEXT NOT NULL,
-        quantity INTEGER NOT NULL,
-        prev_stock INTEGER NOT NULL,
-        new_stock INTEGER NOT NULL,
-        reason TEXT NOT NULL,
-        order_id TEXT,
-        created_at TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS settings (
-        key TEXT PRIMARY KEY,
-        value TEXT NOT NULL
-      );
-
-      CREATE TABLE IF NOT EXISTS admin_users (
-        id TEXT PRIMARY KEY,
-        username TEXT UNIQUE NOT NULL,
-        password_hash TEXT NOT NULL,
-        created_at TEXT NOT NULL
-      );
-    `);
-
-    // Ensure target_type, featured and gallery_images columns exist
-    try {
-      db.run("ALTER TABLE products ADD COLUMN target_type TEXT NOT NULL DEFAULT 'crocs';");
-    } catch (e) {}
-    try {
-      db.run("ALTER TABLE products ADD COLUMN featured INTEGER NOT NULL DEFAULT 0;");
-    } catch (e) {}
-    try {
-      db.run("ALTER TABLE products ADD COLUMN gallery_images TEXT DEFAULT '[]';");
-    } catch (e) {}
-
-    // Categories table for dynamic management without code changes
-    try {
-      db.run(`
-        CREATE TABLE IF NOT EXISTS categories (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          target_type TEXT NOT NULL DEFAULT 'crocs',
-          active INTEGER NOT NULL DEFAULT 1,
-          created_at TEXT NOT NULL
-        );
-      `);
-    } catch (e) {}
-  }
-
-  // Seed admin only when an explicit password is configured. Never invent a default credential.
-  const adminExists = await queryOne('SELECT * FROM admin_users WHERE username = ?', ['admin']);
-  if (!adminExists) {
-    const adminPassword = process.env.ADMIN_PASSWORD || '';
-    if (adminPassword.length < 12) {
-      console.warn('⚠️ Admin no creado: configure ADMIN_PASSWORD con al menos 12 caracteres.');
-    } else {
-      const hash = bcrypt.hashSync(adminPassword, 10);
-      await runSql(
-        'INSERT INTO admin_users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)',
-        ['usr-01', 'admin', hash, new Date().toISOString()]
-      );
-    }
-  }
-
-  // Seed default categories if empty
-  const checkCats = await queryOne('SELECT COUNT(*) as count FROM categories');
-  if (!checkCats || Number(checkCats.count) === 0) {
-    const defaultCats = [
-      { name: 'Personajes', target_type: 'crocs' },
-      { name: 'Medicina', target_type: 'crocs' },
-      { name: 'Animales', target_type: 'crocs' },
-      { name: 'Flores', target_type: 'crocs' },
-      { name: 'Letras', target_type: 'crocs' },
-      { name: 'Deportes', target_type: 'crocs' },
-      { name: 'Comida', target_type: 'crocs' },
-      { name: 'Viajes', target_type: 'crocs' },
-      { name: 'Packs', target_type: 'crocs' },
-      { name: 'Ofertas', target_type: 'crocs' },
-      { name: 'Especiales', target_type: 'crocs' },
-      { name: 'Otros', target_type: 'crocs' },
-      { name: 'Cardiología', target_type: 'estetoscopio' },
-      { name: 'Odontología', target_type: 'estetoscopio' },
-      { name: 'Veterinaria', target_type: 'estetoscopio' },
-      { name: 'Packs Médicos', target_type: 'estetoscopio' },
-      { name: 'Ofertas', target_type: 'estetoscopio' }
-    ];
-    const now = new Date().toISOString();
-    for (let i = 0; i < defaultCats.length; i++) {
-      const c = defaultCats[i];
-      await runSql(
-        'INSERT INTO categories (id, name, target_type, active, created_at) VALUES (?, ?, ?, 1, ?)',
-        [`cat-${i + 1}`, c.name, c.target_type, now]
-      );
-    }
-  }
-
-  // Seed default settings if empty
-  const checkSettings = await queryOne('SELECT COUNT(*) as count FROM settings');
-  if (!checkSettings || Number(checkSettings.count) === 0) {
-    const defaultSettings = {
-      storeName: 'PINPOP',
-      tagline: 'Pins para tus Crocs • Dale onda a tus calzados ✨',
-      whatsappNumber: DEFAULT_WHATSAPP_NUMBER,
-      deliveryFee: 15000,
-      freeDeliveryThreshold: 100000,
-      promoBanner: '¡Dale personalidad a tus Crocs! ✨ Elegí tus pins favoritos. Envíos en el día a todo el país 🛵'
-    };
-    for (const [key, val] of Object.entries(defaultSettings)) {
-      if (isPostgres) {
-        await runSql(
-          'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value',
-          [key, JSON.stringify(val)]
-        );
-      } else {
-        await runSql('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, JSON.stringify(val)]);
-      }
-    }
-  }
-
-  // Migrate the old demo WhatsApp placeholder without overwriting a real custom number.
-  const whatsappSetting = await queryOne('SELECT value FROM settings WHERE key = ?', ['whatsappNumber']);
-  let currentWhatsapp = null;
-  if (whatsappSetting) {
-    try { currentWhatsapp = JSON.parse(whatsappSetting.value); }
-    catch (_) { currentWhatsapp = whatsappSetting.value; }
-  }
-  if (!currentWhatsapp || String(currentWhatsapp).replace(/\D/g, '') === LEGACY_PLACEHOLDER_WHATSAPP) {
-    if (isPostgres) {
-      await runSql(
-        'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value',
-        ['whatsappNumber', JSON.stringify(DEFAULT_WHATSAPP_NUMBER)]
-      );
-    } else {
-      await runSql('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['whatsappNumber', JSON.stringify(DEFAULT_WHATSAPP_NUMBER)]);
-    }
-  }
-
-  // Seed initial products catalog
-  await seedInitialProducts();
-
-  // Migrate legacy local PNG/JPG seed image paths to the optimized WebP assets.
-  // This preserves existing PostgreSQL/Supabase catalogs created by previous PINPOP releases.
-  await migrateLegacyLocalImagePaths();
-
-  persistDb();
-  console.log('✓ Tablas relacionales inicializadas con éxito.');
+function normalizeFallbackProduct(p) {
+  const gallery = Array.isArray(p.galleryImages)
+    ? p.galleryImages
+    : (() => { try { return JSON.parse(p.gallery_images || '[]'); } catch (_) { return []; } })();
+  return {
+    id: p.id,
+    sku: p.sku,
+    name: p.name,
+    category: p.category || 'Otros',
+    target_type: p.target_type || p.targetType || 'crocs',
+    price: Number(p.price) || 0,
+    promo_price: p.promo_price ?? p.promoPrice ?? null,
+    cost_price: Number(p.cost_price ?? p.costPrice ?? 0) || 0,
+    stock: Number(p.stock) || 0,
+    min_stock: Number(p.min_stock ?? p.minStock ?? 3) || 3,
+    image: p.image,
+    description: p.description || '',
+    badge: p.badge || '',
+    sales_count: Number(p.sales_count ?? p.salesCount ?? 0) || 0,
+    active: p.active === false || p.active === 0 ? 0 : 1,
+    featured: p.featured ? 1 : 0,
+    gallery_images: gallery,
+    created_at: p.created_at || new Date().toISOString(),
+    updated_at: p.updated_at || new Date().toISOString()
+  };
 }
 
-async function migrateLegacyLocalImagePaths() {
-  const optimizedPaths = [
-    '/images/pins/avocado-pin.webp',
-    '/images/pins/boba-pin.webp',
-    '/images/pins/capivara-pin.webp',
-    '/images/pins/corazon-rojo-pin.webp',
-    '/images/pins/crocs-jibbitz-charm-stitch-mickey-avenge-2.webp',
-    '/images/pins/crocs-jibbitz-charms-pins-1.webp',
-    '/images/pins/dino-pin.webp',
-    '/images/pins/estetoscopio-pin.webp',
-    '/images/pins/flower-pin.webp',
-    '/images/pins/futbol-pin.webp',
-    '/images/pins/gamer-pin.webp',
-    '/images/pins/gatita-bow-pin.webp',
-    '/images/pins/heart-glitter-pin.webp',
-    '/images/pins/pizza-pin.webp',
-    '/images/pins/steth-charm-duo.webp',
-    '/images/pins/steth-charm-ekg.webp',
-    '/images/pins/steth-charm-paw.webp',
-    '/images/pins/steth-charm-tooth.webp'
-  ];
-
-  for (const nextUrl of optimizedPaths) {
-    const base = nextUrl.slice(0, -5); // remove .webp
-    for (const ext of ['.png', '.jpg', '.jpeg']) {
-      const previousUrl = base + ext;
-      await runSql('UPDATE products SET image = ? WHERE image = ?', [nextUrl, previousUrl]);
-      await runSql(
-        'UPDATE products SET gallery_images = REPLACE(gallery_images, ?, ?) WHERE gallery_images LIKE ?',
-        [previousUrl, nextUrl, `%${previousUrl}%`]
-      );
-    }
-  }
+function makeInitialState() {
+  return {
+    version: 1,
+    products: fallbackData.products.map(normalizeFallbackProduct),
+    categories: fallbackData.categories.map(c => ({
+      id: c.id || randomId('cat'),
+      name: c.name,
+      target_type: c.target_type || c.targetType || 'crocs',
+      active: c.active === false || c.active === 0 ? 0 : 1,
+      created_at: c.created_at || new Date().toISOString()
+    })),
+    settings: {
+      ...clone(fallbackData.settings || {}),
+      whatsappNumber: DEFAULT_WHATSAPP_NUMBER
+    },
+    orders: [],
+    order_items: [],
+    stock_movements: [],
+    security: {
+      password_fingerprint: '',
+      totp_enabled: false,
+      totp_secret: '',
+      totp_pending_secret: '',
+      totp_pending_at: null,
+      totp_enabled_at: null
+    },
+    counters: { order: 1000 }
+  };
 }
 
-async function seedInitialProducts() {
-  const initial = [
-    {
-      id: 'pin-01',
-      sku: 'MED-014',
-      name: 'Pin Estetoscopio Rosa con Corazón',
-      category: 'Medicina',
-      price: 12000,
-      promo_price: 10000,
-      cost_price: 4000,
-      stock: 18,
-      min_stock: 5,
-      image: '/images/pins/estetoscopio-pin.webp',
-      description: 'Estetoscopio médico en relieve 3D color rosa con dije de corazón rojo. Ideal para enfermeros, médicos y estudiantes de medicina.',
-      badge: 'Top Medicina 🩺',
-      sales_count: 31
-    },
-    {
-      id: 'pin-02',
-      sku: 'SIM-001',
-      name: 'Pin Corazón Rojo Clásico',
-      category: 'Ofertas',
-      price: 10000,
-      promo_price: 8000,
-      cost_price: 3500,
-      stock: 11,
-      min_stock: 5,
-      image: '/images/pins/corazon-rojo-pin.webp',
-      description: 'Corazón rojo inflado en alto relieve de goma PVC suave. El detalle romántico y tierno perfecto para combinar.',
-      badge: 'En Oferta ❤️',
-      sales_count: 38
-    },
-    {
-      id: 'pin-03',
-      sku: 'PER-008',
-      name: 'Pin Gatita Bow (Estilo Hello Kitty)',
-      category: 'Personajes',
-      price: 12000,
-      promo_price: null,
-      cost_price: 4200,
-      stock: 14,
-      min_stock: 4,
-      image: '/images/pins/gatita-bow-pin.webp',
-      description: 'Carita tierna de gatita blanca con su icónico lazo rosa. De los pins más pedidos por grandes y chicos.',
-      badge: 'Más Vendido ✨',
-      sales_count: 41
-    },
-    {
-      id: 'pin-04',
-      sku: 'ANI-003',
-      name: 'Pin Capibara con Florcita',
-      category: 'Animales',
-      price: 12000,
-      promo_price: null,
-      cost_price: 4000,
-      stock: 8,
-      min_stock: 3,
-      image: '/images/pins/capivara-pin.webp',
-      description: 'El animal más querido de internet con florcita rosa en la cabeza. Relieve 3D de alta definición.',
-      badge: 'Favorito 🦦',
-      sales_count: 47
-    },
-    {
-      id: 'pin-05',
-      sku: 'COM-002',
-      name: 'Pin Aguacate Cool con Lentes',
-      category: 'Comida',
-      price: 10000,
-      promo_price: null,
-      cost_price: 3500,
-      stock: 15,
-      min_stock: 4,
-      image: '/images/pins/avocado-pin.webp',
-      description: 'Palta / aguacate maduro y simpático usando lentes de sol oscuros. Estilo y frescura en tu calzado.',
-      badge: 'Tendencia 🥑',
-      sales_count: 24
-    },
-    {
-      id: 'pin-06',
-      sku: 'FLO-005',
-      name: 'Pin Florcita Daisy Sonriente',
-      category: 'Flores',
-      price: 10000,
-      promo_price: null,
-      cost_price: 3200,
-      stock: 20,
-      min_stock: 5,
-      image: '/images/pins/flower-pin.webp',
-      description: 'Margarita blanca y amarilla con carita alegre estilo Murakami. Llena de vida y buena vibra.',
-      badge: 'Clásico 🌼',
-      sales_count: 29
-    },
-    {
-      id: 'pin-07',
-      sku: 'DEP-001',
-      name: 'Pin Balón de Fútbol Estrella',
-      category: 'Deportes',
-      price: 12000,
-      promo_price: null,
-      cost_price: 4000,
-      stock: 7,
-      min_stock: 3,
-      image: '/images/pins/futbol-pin.webp',
-      description: 'Pelota de fútbol clásica con estrellas doradas. Indispensable para los fanáticos del deporte rey.',
-      badge: 'Fútbol ⚽',
-      sales_count: 22
-    },
-    {
-      id: 'pin-08',
-      sku: 'GAM-003',
-      name: 'Pin Control Gamer Joystick Arcade',
-      category: 'Personajes',
-      price: 12000,
-      promo_price: null,
-      cost_price: 4000,
-      stock: 6,
-      min_stock: 3,
-      image: '/images/pins/gamer-pin.webp',
-      description: 'Mando retro de videojuegos con cruceta y botones de colores. El preferido de los streamers y gamers.',
-      badge: 'Gamer 🎮',
-      sales_count: 26
-    },
-    {
-      id: 'pin-09',
-      sku: 'COM-007',
-      name: 'Pin Rebanada de Pizza Pepperoni',
-      category: 'Comida',
-      price: 10000,
-      promo_price: null,
-      cost_price: 3500,
-      stock: 9,
-      min_stock: 3,
-      image: '/images/pins/pizza-pin.webp',
-      description: 'Porción de pizza con queso derretido y rodajas de pepperoni. Un clásico para personalizar con humor.',
-      badge: 'Delicioso 🍕',
-      sales_count: 18
-    },
-    {
-      id: 'pin-10',
-      sku: 'COM-010',
-      name: 'Pin Vaso Boba Tea Kawaii',
-      category: 'Comida',
-      price: 10000,
-      promo_price: null,
-      cost_price: 3500,
-      stock: 8,
-      min_stock: 3,
-      image: '/images/pins/boba-pin.webp',
-      description: 'Vaso de té de perlas con pajita y carita tierna. Súper popular entre los amantes del bubble tea.',
-      badge: 'Kawaii 🧋',
-      sales_count: 16
-    },
-    {
-      id: 'pin-11',
-      sku: 'MET-004',
-      name: 'Pin Corazón Glitter Dorado Lux',
-      category: 'Ofertas',
-      price: 15000,
-      promo_price: 12000,
-      cost_price: 5000,
-      stock: 2,
-      min_stock: 3,
-      image: '/images/pins/heart-glitter-pin.webp',
-      description: 'Acabado brillante con microglitter holográfico dorado y resina espejada. Toque de elegancia y brillo.',
-      badge: '¡Últimas 2! ⚡',
-      sales_count: 27
-    },
-    {
-      id: 'pin-12',
-      sku: 'ANI-006',
-      name: 'Pin Baby Dino T-Rex Verde',
-      category: 'Animales',
-      price: 12000,
-      promo_price: null,
-      cost_price: 4000,
-      stock: 0,
-      min_stock: 3,
-      image: '/images/pins/dino-pin.webp',
-      description: 'Dinosaurio verde simpático en goma suave. Reposición de stock en camino.',
-      badge: 'Agotado',
-      sales_count: 35
-    },
-    {
-      id: 'pin-13',
-      sku: 'PCK-MED01',
-      name: 'Pack Medicina 5 Pins (Promo Especial)',
-      category: 'Packs',
-      price: 45000,
-      promo_price: 45000,
-      cost_price: 18000,
-      stock: 5,
-      min_stock: 2,
-      image: '/images/pins/estetoscopio-pin.webp',
-      description: 'Kit completo para personal de salud: Estetoscopio, Corazón, Curita, Cápsula y Dije Médico. Llevá 5 por solo Gs. 45.000.',
-      badge: 'Pack 5x 🩺',
-      sales_count: 19
-    },
-    {
-      id: 'pin-14',
-      sku: 'PCK-LET02',
-      name: 'Pack Letras & Good Vibes (Armá tu Nombre)',
-      category: 'Letras',
-      price: 40000,
-      promo_price: null,
-      cost_price: 15000,
-      stock: 6,
-      min_stock: 2,
-      image: '/images/pins/crocs-jibbitz-charms-pins-1.webp',
-      description: 'Combiná iniciales, letras en relieve y dijes positivos para personalizar tu Crocs con tu nombre.',
-      badge: 'Armá tu Nombre 🔤',
-      sales_count: 14
-    },
-    {
-      id: 'pin-15',
-      sku: 'PCK-DIS03',
-      name: 'Pack Disney Clásicos 5 Charms',
-      category: 'Packs',
-      target_type: 'crocs',
-      price: 50000,
-      promo_price: null,
-      cost_price: 20000,
-      stock: 4,
-      min_stock: 2,
-      image: '/images/pins/crocs-jibbitz-charm-stitch-mickey-avenge-2.webp',
-      description: 'Pack con 5 pins de personajes favoritos estilo animación clásica.',
-      badge: 'Pack 5 Charms 🎁',
-      sales_count: 23
-    },
-    // --- PINS / CHARMS PARA ESTETOSCOPIO ---
-    {
-      id: 'pin-steth-01',
-      sku: 'EST-EKG01',
-      name: 'Dije Clip Estetoscopio Corazón EKG Rosa',
-      category: 'Cardiología',
-      target_type: 'estetoscopio',
-      price: 18000,
-      promo_price: 15000,
-      cost_price: 6000,
-      stock: 15,
-      min_stock: 4,
-      image: '/images/pins/steth-charm-ekg.webp',
-      description: 'Dije clip metálico en oro rosa con esmalte de corazón y pulso EKG. Se abraza con seguridad al tubo de cualquier estetoscopio estándar (Littmann, MDF, etc.) sin rayarlo.',
-      badge: 'Top Esteto 🩺',
-      sales_count: 36
-    },
-    {
-      id: 'pin-steth-02',
-      sku: 'EST-DEN02',
-      name: 'Charm Estetoscopio Diente Molar Kawaii (Odonto)',
-      category: 'Odontología',
-      target_type: 'estetoscopio',
-      price: 18000,
-      promo_price: null,
-      cost_price: 6000,
-      stock: 12,
-      min_stock: 3,
-      image: '/images/pins/steth-charm-tooth.webp',
-      description: 'Diente molar sonriente con cofia rosa en resina esmaltada de alta definición. El accesorio clínico ideal para odontólogos, cirujanos dentales y estudiantes.',
-      badge: 'Odontología 🦷',
-      sales_count: 28
-    },
-    {
-      id: 'pin-steth-03',
-      sku: 'EST-VET03',
-      name: 'Dije Estetoscopio Patita Pet (Veterinaria)',
-      category: 'Veterinaria',
-      target_type: 'estetoscopio',
-      price: 18000,
-      promo_price: null,
-      cost_price: 6000,
-      stock: 14,
-      min_stock: 4,
-      image: '/images/pins/steth-charm-paw.webp',
-      description: 'Huella de mascota en oro rosa y verde menta pastel. Broche posterior que no resbala en la goma del tubo. El preferido de veterinarios.',
-      badge: 'Veterinaria 🐾',
-      sales_count: 33
-    },
-    {
-      id: 'pin-steth-04',
-      sku: 'EST-DUO04',
-      name: 'Pack Combo Clínico: Dije Estetoscopio + Pin Crocs a Juego',
-      category: 'Packs Médicos',
-      target_type: 'estetoscopio',
-      price: 28000,
-      promo_price: 25000,
-      cost_price: 9500,
-      stock: 8,
-      min_stock: 3,
-      image: '/images/pins/steth-charm-duo.webp',
-      description: '¡El combo definitivo! Incluye 1 clip para tubo de estetoscopio + 1 pin para tus calzados Crocs con diseño clínico a juego. Llevá ambos y combiná tu guardia médica.',
-      badge: 'Combo 2 en 1 🎁',
-      sales_count: 42
-    },
-    {
-      id: 'pin-steth-05',
-      sku: 'EST-COR05',
-      name: 'Charm Estetoscopio Corazón Glitter Lux',
-      category: 'Cardiología',
-      target_type: 'estetoscopio',
-      price: 18000,
-      promo_price: null,
-      cost_price: 6000,
-      stock: 10,
-      min_stock: 3,
-      image: '/images/pins/heart-glitter-pin.webp',
-      description: 'Corazón brillante con microglitter holográfico dorado y montura especial para tubuladura de estetoscopio.',
-      badge: 'Glitter Lux ✨',
-      sales_count: 25
-    },
-    {
-      id: 'pin-steth-06',
-      sku: 'EST-MIN06',
-      name: 'Pin Mini Estetoscopio Clínico 3D Rosa',
-      category: 'Cardiología',
-      target_type: 'estetoscopio',
-      price: 18000,
-      promo_price: 15000,
-      cost_price: 6000,
-      stock: 16,
-      min_stock: 4,
-      image: '/images/pins/estetoscopio-pin.webp',
-      description: 'Dije en relieve 3D de alta definición que se abraza al estetoscopio para personalizar tu herramienta de trabajo diaria.',
-      badge: 'Top Ventas 🩺',
-      sales_count: 49
-    }
-  ];
-
-  const now = new Date().toISOString();
-  for (const p of initial) {
-    const existing = await queryOne('SELECT id FROM products WHERE id = ?', [p.id]);
-    if (!existing) {
-      await runSql(
-        `INSERT INTO products (
-          id, sku, name, category, target_type, price, promo_price, cost_price, stock, min_stock, image, description, badge, sales_count, active, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          p.id, p.sku, p.name, p.category, p.target_type || 'crocs', p.price, p.promo_price, p.cost_price, p.stock, p.min_stock, p.image, p.description, p.badge, p.sales_count, 1, now, now
-        ]
-      );
-
-      await runSql(
-        `INSERT INTO stock_movements (id, product_id, sku, product_name, type, quantity, prev_stock, new_stock, reason, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        ['mov-' + Math.random().toString(36).substring(2, 9), p.id, p.sku, p.name, 'entrada', p.stock, 0, p.stock, 'Carga inicial de inventario', now]
-      );
-    }
+async function getBlobStore() {
+  if (!process.env.NETLIFY) return null;
+  if (!storePromise) {
+    storePromise = import('@netlify/blobs').then(({ getStore }) => getStore(STORE_NAME));
   }
+  return storePromise;
 }
 
-// ==========================================
-// PUBLIC METHODS (Safe, Sanitized)
-// ==========================================
+async function readStateWithMeta() {
+  const store = await getBlobStore();
+  if (!store) {
+    if (!localState) localState = makeInitialState();
+    return { data: clone(localState), etag: 'local' };
+  }
 
-async function getPublicProducts() {
-  // CRITICAL: NEVER expose cost_price or min_stock!
-  const rows = await queryAll(`
-    SELECT id, sku, name, category, target_type, price, promo_price, stock, image, description, badge, active, featured, gallery_images
-    FROM products
-    WHERE active = 1 OR active = true
-    ORDER BY featured DESC, id ASC
-  `);
-  return rows.map(p => {
-    let gallery = [];
-    try {
-      gallery = JSON.parse(p.gallery_images || '[]');
-    } catch (e) {
-      gallery = [];
+  let entry = await store.getWithMetadata(STATE_KEY, { type: 'json', consistency: 'strong' });
+  if (!entry) {
+    const initial = makeInitialState();
+    await store.setJSON(STATE_KEY, initial, { onlyIfNew: true });
+    entry = await store.getWithMetadata(STATE_KEY, { type: 'json', consistency: 'strong' });
+  }
+  if (!entry || !entry.data) throw new Error('No se pudo inicializar el almacenamiento PINPOP.');
+  return entry;
+}
+
+async function readState() {
+  const entry = await readStateWithMeta();
+  return clone(entry.data);
+}
+
+async function mutateState(work) {
+  const store = await getBlobStore();
+  if (!store) {
+    if (!localState) localState = makeInitialState();
+    const draft = clone(localState);
+    const result = await work(draft);
+    localState = draft;
+    return result;
+  }
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const entry = await readStateWithMeta();
+    const draft = clone(entry.data);
+    const result = await work(draft);
+    const write = await store.setJSON(STATE_KEY, draft, { onlyIfMatch: entry.etag });
+    if (write.modified) return result;
+  }
+  throw new Error('El catálogo cambió al mismo tiempo. Intente nuevamente.');
+}
+
+
+function ensureSecurityState(state) {
+  if (!state.security || typeof state.security !== 'object') state.security = {};
+  const sec = state.security;
+  if (typeof sec.password_fingerprint !== 'string') sec.password_fingerprint = '';
+  if (typeof sec.totp_enabled !== 'boolean') sec.totp_enabled = false;
+  if (typeof sec.totp_secret !== 'string') sec.totp_secret = '';
+  if (typeof sec.totp_pending_secret !== 'string') sec.totp_pending_secret = '';
+  if (!('totp_pending_at' in sec)) sec.totp_pending_at = null;
+  if (!('totp_enabled_at' in sec)) sec.totp_enabled_at = null;
+  return sec;
+}
+
+async function syncAdminSecurity(passwordFingerprint) {
+  if (!passwordFingerprint) throw new Error('Fingerprint de contraseña inválido.');
+  return mutateState(async state => {
+    const sec = ensureSecurityState(state);
+    if (sec.password_fingerprint && sec.password_fingerprint !== passwordFingerprint) {
+      sec.password_fingerprint = passwordFingerprint;
+      sec.totp_enabled = false;
+      sec.totp_secret = '';
+      sec.totp_pending_secret = '';
+      sec.totp_pending_at = null;
+      sec.totp_enabled_at = null;
+    } else if (!sec.password_fingerprint) {
+      sec.password_fingerprint = passwordFingerprint;
     }
     return {
-      ...p,
-      targetType: p.target_type || 'crocs',
-      promoPrice: p.promo_price,
-      active: Boolean(p.active),
-      featured: Boolean(p.featured),
-      galleryImages: gallery
+      totpEnabled: Boolean(sec.totp_enabled && sec.totp_secret),
+      pending: Boolean(sec.totp_pending_secret),
+      pendingAt: sec.totp_pending_at || null,
+      enabledAt: sec.totp_enabled_at || null
     };
   });
 }
 
-async function getPublicProductById(id) {
-  const p = await queryOne(`
-    SELECT id, sku, name, category, target_type, price, promo_price, stock, image, description, badge, active, featured, gallery_images, updated_at
-    FROM products
-    WHERE id = ? AND (active = 1 OR active = true)
-  `, [id]);
-  if (!p) return null;
-  let gallery = [];
-  try { gallery = JSON.parse(p.gallery_images || '[]'); } catch (_) {}
+async function beginAdminTotpSetup(passwordFingerprint, secret) {
+  if (!passwordFingerprint || !secret) throw new Error('Datos de configuración 2FA inválidos.');
+  return mutateState(async state => {
+    const sec = ensureSecurityState(state);
+    if (sec.password_fingerprint && sec.password_fingerprint !== passwordFingerprint) {
+      sec.totp_enabled = false;
+      sec.totp_secret = '';
+    }
+    sec.password_fingerprint = passwordFingerprint;
+    if (sec.totp_enabled && sec.totp_secret) throw new Error('El 2FA ya está configurado.');
+    sec.totp_pending_secret = secret;
+    sec.totp_pending_at = new Date().toISOString();
+    return { success: true };
+  });
+}
+
+async function getAdminTotpPending(passwordFingerprint) {
+  const state = await readState();
+  const sec = ensureSecurityState(state);
+  if (!passwordFingerprint || sec.password_fingerprint !== passwordFingerprint) return '';
+  return sec.totp_pending_secret || '';
+}
+
+async function getAdminTotpSecret(passwordFingerprint) {
+  const state = await readState();
+  const sec = ensureSecurityState(state);
+  if (!passwordFingerprint || sec.password_fingerprint !== passwordFingerprint || !sec.totp_enabled) return '';
+  return sec.totp_secret || '';
+}
+
+async function confirmAdminTotpSetup(passwordFingerprint, secret) {
+  if (!passwordFingerprint || !secret) throw new Error('Datos de confirmación 2FA inválidos.');
+  return mutateState(async state => {
+    const sec = ensureSecurityState(state);
+    if (sec.password_fingerprint !== passwordFingerprint) throw new Error('La contraseña administrativa cambió. Reinicie la configuración 2FA.');
+    if (sec.totp_pending_secret !== secret) throw new Error('La configuración 2FA pendiente ya no es válida.');
+    sec.totp_secret = secret;
+    sec.totp_enabled = true;
+    sec.totp_enabled_at = new Date().toISOString();
+    sec.totp_pending_secret = '';
+    sec.totp_pending_at = null;
+    return { success: true, enabledAt: sec.totp_enabled_at };
+  });
+}
+
+async function initDatabase() {
+  await readStateWithMeta();
+  return true;
+}
+
+function publicProduct(p) {
   return {
-    ...p,
+    id: p.id,
+    sku: p.sku,
+    name: p.name,
+    category: p.category,
+    target_type: p.target_type,
     targetType: p.target_type || 'crocs',
-    promoPrice: p.promo_price,
+    price: Number(p.price) || 0,
+    promo_price: p.promo_price ?? null,
+    promoPrice: p.promo_price ?? null,
+    stock: Number(p.stock) || 0,
+    image: p.image,
+    description: p.description || '',
+    badge: p.badge || '',
     active: Boolean(p.active),
     featured: Boolean(p.featured),
-    galleryImages: gallery,
+    gallery_images: JSON.stringify(p.gallery_images || []),
+    galleryImages: Array.isArray(p.gallery_images) ? p.gallery_images : [],
+    updated_at: p.updated_at,
     updatedAt: p.updated_at
   };
 }
 
+function adminProduct(p) {
+  return {
+    ...publicProduct(p),
+    cost_price: Number(p.cost_price) || 0,
+    costPrice: Number(p.cost_price) || 0,
+    min_stock: Number(p.min_stock) || 0,
+    minStock: Number(p.min_stock) || 0,
+    sales_count: Number(p.sales_count) || 0,
+    salesCount: Number(p.sales_count) || 0,
+    created_at: p.created_at,
+    createdAt: p.created_at
+  };
+}
+
+async function getPublicProducts() {
+  const state = await readState();
+  return state.products
+    .filter(p => Boolean(p.active))
+    .sort((a, b) => Number(b.featured || 0) - Number(a.featured || 0) || String(a.id).localeCompare(String(b.id)))
+    .map(publicProduct);
+}
+
+async function getPublicProductById(id) {
+  const state = await readState();
+  const p = state.products.find(p => p.id === id && Boolean(p.active));
+  return p ? publicProduct(p) : null;
+}
+
 async function getSeoProducts() {
-  const rows = await queryAll(`
-    SELECT id, name, updated_at
-    FROM products
-    WHERE active = 1 OR active = true
-    ORDER BY updated_at DESC, id ASC
-  `);
-  return rows.map(r => ({ id: r.id, name: r.name, updatedAt: r.updated_at }));
+  const state = await readState();
+  return state.products.filter(p => Boolean(p.active)).map(p => ({ id: p.id, name: p.name, updatedAt: p.updated_at || null }));
 }
 
 async function getPublicSettings() {
-  const rows = await queryAll('SELECT key, value FROM settings');
-  const out = {};
-  rows.forEach(r => {
-    try {
-      out[r.key] = JSON.parse(r.value);
-    } catch (e) {
-      out[r.key] = r.value;
-    }
-  });
-  delete out.adminPassword;
-  delete out.jwtSecret;
-  return out;
+  const state = await readState();
+  return clone(state.settings || {});
 }
 
-// ==========================================
-// SECURE ORDER CREATION (Server-Side Pricing + Clean Text Sanitization)
-// ==========================================
-
 async function createOrderSecure({ customer, items }) {
-  if (!items || !Array.isArray(items) || items.length === 0) {
-    throw new Error('El carrito no puede estar vacío.');
-  }
-
-  if (!customer || !customer.name || !customer.phone) {
-    throw new Error('Nombre y teléfono son obligatorios.');
-  }
+  if (!items || !Array.isArray(items) || items.length === 0) throw new Error('El carrito no puede estar vacío.');
+  if (!customer || !customer.name || !customer.phone) throw new Error('Nombre y teléfono son obligatorios.');
 
   const safeName = sanitizeString(customer.name, 100);
   const safePhone = sanitizeString(customer.phone, 30);
@@ -896,123 +328,71 @@ async function createOrderSecure({ customer, items }) {
   const safeNotes = sanitizeString(customer.notes, 250);
   const safeDeliveryType = customer.deliveryType === 'pickup' ? 'pickup' : 'delivery';
 
-  const created = await withTransaction(async (tx) => {
+  const created = await mutateState(async state => {
     let subtotal = 0;
     const verifiedItems = [];
-
     for (const item of items) {
       const qty = parseInt(item.quantity, 10);
-      if (isNaN(qty) || qty <= 0 || qty > 100) {
-        throw new Error('Cantidad inválida para el producto.');
-      }
-
-      const prod = await tx.queryOne(
-        'SELECT * FROM products WHERE id = ? AND (active = 1 OR active = true)',
-        [item.productId]
-      );
+      if (!Number.isInteger(qty) || qty <= 0 || qty > 100) throw new Error('Cantidad inválida para el producto.');
+      const prod = state.products.find(p => p.id === item.productId && Boolean(p.active));
       if (!prod) throw new Error('El producto seleccionado no existe o está inactivo.');
-      if (Number(prod.stock) < qty) {
-        throw new Error(`Stock insuficiente para "${prod.name}". Stock disponible: ${prod.stock}, solicitado: ${qty}.`);
-      }
-
-      const effectivePrice = prod.promo_price !== null && Number(prod.promo_price) > 0
-        ? Number(prod.promo_price)
-        : Number(prod.price);
-      const lineTotal = effectivePrice * qty;
+      if (Number(prod.stock) < qty) throw new Error(`Stock insuficiente para "${prod.name}". Stock disponible: ${prod.stock}.`);
+      const price = prod.promo_price !== null && Number(prod.promo_price) > 0 ? Number(prod.promo_price) : Number(prod.price);
+      const lineTotal = price * qty;
       subtotal += lineTotal;
-
-      verifiedItems.push({
-        productId: prod.id,
-        sku: prod.sku,
-        name: prod.name,
-        image: prod.image,
-        price: effectivePrice,
-        quantity: qty,
-        lineTotal
-      });
+      verifiedItems.push({ productId: prod.id, sku: prod.sku, name: prod.name, image: prod.image, price, quantity: qty, lineTotal });
     }
 
-    const settingRows = await tx.queryAll('SELECT key, value FROM settings');
-    const settings = {};
-    for (const row of settingRows) {
-      try { settings[row.key] = JSON.parse(row.value); }
-      catch (_) { settings[row.key] = row.value; }
-    }
-
-    const deliveryFeeDefault = Number(settings.deliveryFee || 15000);
-    const freeThreshold = Number(settings.freeDeliveryThreshold || 100000);
-    const deliveryFee = safeDeliveryType === 'delivery' && subtotal < freeThreshold
-      ? deliveryFeeDefault
-      : 0;
+    const settings = state.settings || {};
+    const fee = Number(settings.deliveryFee || 15000);
+    const threshold = Number(settings.freeDeliveryThreshold || 100000);
+    const deliveryFee = safeDeliveryType === 'delivery' && subtotal < threshold ? fee : 0;
     const total = subtotal + deliveryFee;
-
-    let nextNum;
-    if (isPostgres) {
-      const seqRow = await tx.queryOne("SELECT nextval('pinpop_order_number_seq') AS next_num");
-      nextNum = Number(seqRow.next_num);
-    } else {
-      const orderRows = await tx.queryAll('SELECT id FROM orders');
-      let maxNum = 1000;
-      for (const row of orderRows) {
-        const match = /^P(\d+)$/.exec(String(row.id || ''));
-        if (match) maxNum = Math.max(maxNum, Number(match[1]));
-      }
-      nextNum = maxNum + 1;
-    }
-
-    const orderId = `P${nextNum}`;
+    state.counters = state.counters || { order: 1000 };
+    state.counters.order = Math.max(1000, Number(state.counters.order) || 1000) + 1;
+    const orderId = `P${state.counters.order}`;
     const now = new Date().toISOString();
 
-    await tx.runSql(
-      `INSERT INTO orders (
-        id, customer_name, customer_phone, delivery_type, address, payment_method, notes,
-        subtotal, delivery_fee, total, status, stock_deducted, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        orderId, safeName, safePhone, safeDeliveryType, safeAddress, safePayment, safeNotes,
-        subtotal, deliveryFee, total, 'pending', 0, now
-      ]
-    );
-
+    state.orders.push({
+      id: orderId,
+      customer_name: safeName,
+      customer_phone: safePhone,
+      delivery_type: safeDeliveryType,
+      address: safeAddress,
+      payment_method: safePayment,
+      notes: safeNotes,
+      subtotal,
+      delivery_fee: deliveryFee,
+      total,
+      status: 'pending',
+      stock_deducted: 0,
+      confirmed_at: null,
+      delivered_at: null,
+      cancelled_at: null,
+      created_at: now
+    });
     for (const it of verifiedItems) {
-      await tx.runSql(
-        `INSERT INTO order_items (id, order_id, product_id, product_name, sku, price, quantity, line_total)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [randomId('item'), orderId, it.productId, it.name, it.sku, it.price, it.quantity, it.lineTotal]
-      );
+      state.order_items.push({ id: randomId('item'), order_id: orderId, product_id: it.productId, product_name: it.name, sku: it.sku, price: it.price, quantity: it.quantity, line_total: it.lineTotal });
     }
-
-    return { orderId, now, verifiedItems, subtotal, deliveryFee, total, settings };
+    return { orderId, now, verifiedItems, subtotal, deliveryFee, total, settings: clone(settings) };
   });
 
   const { orderId, now, verifiedItems, subtotal, deliveryFee, total, settings } = created;
-  const formatPrice = (v) => `Gs. ${Number(v).toLocaleString('es-PY')}`;
+  const formatPrice = v => `Gs. ${Number(v).toLocaleString('es-PY')}`;
   let msg = `Hola 👋 Quiero realizar el pedido #${orderId}\n\n`;
-  verifiedItems.forEach(it => {
-    msg += `${it.quantity}x ${it.name} — ${formatPrice(it.lineTotal)}\n`;
-  });
+  verifiedItems.forEach(it => { msg += `${it.quantity}x ${it.name} — ${formatPrice(it.lineTotal)}\n`; });
   msg += `\nTotal: ${formatPrice(total)}`;
-
   if (safeName) msg += `\n\n👤 *Cliente:* ${safeName}`;
   if (safeDeliveryType === 'delivery' && safeAddress) msg += `\n📍 *Entrega:* ${safeAddress}`;
   else if (safeDeliveryType === 'pickup') msg += '\n🏪 *Retiro en local*';
   if (safePayment) msg += `\n💳 *Pago:* ${safePayment}`;
   if (safeNotes) msg += `\n📝 *Nota:* ${safeNotes}`;
-
   const rawPhone = String(settings.whatsappNumber || DEFAULT_WHATSAPP_NUMBER).replace(/\D/g, '');
-  const whatsappUrl = `https://wa.me/${rawPhone}?text=${encodeURIComponent(msg)}`;
 
   return {
     order: {
       id: orderId,
-      customer: {
-        name: safeName,
-        phone: safePhone,
-        deliveryType: safeDeliveryType,
-        address: safeAddress,
-        paymentMethod: safePayment,
-        notes: safeNotes
-      },
+      customer: { name: safeName, phone: safePhone, deliveryType: safeDeliveryType, address: safeAddress, paymentMethod: safePayment, notes: safeNotes },
       items: verifiedItems,
       subtotal,
       deliveryFee,
@@ -1020,624 +400,264 @@ async function createOrderSecure({ customer, items }) {
       status: 'pending',
       createdAt: now
     },
-    whatsappUrl,
+    whatsappUrl: `https://wa.me/${rawPhone}?text=${encodeURIComponent(msg)}`,
     formattedMessage: msg
   };
 }
 
-// ==========================================
-// PROTECTED ADMIN METHODS
-// ==========================================
-
-async function verifyAdminPassword(password) {
-  const user = await queryOne('SELECT * FROM admin_users WHERE username = ?', ['admin']);
-  if (!user) return false;
-  return bcrypt.compareSync(password, user.password_hash);
-}
-
-async function updateAdminPassword(newPassword) {
-  const hash = bcrypt.hashSync(newPassword, 10);
-  await runSql('UPDATE admin_users SET password_hash = ? WHERE username = ?', [hash, 'admin']);
-  persistDb();
-  return true;
-}
+async function verifyAdminPassword() { return false; }
+async function updateAdminPassword() { throw new Error('La contraseña se administra desde las variables de entorno de Netlify.'); }
 
 async function getAllProductsAdmin() {
-  const rows = await queryAll(`
-    SELECT id, sku, name, category, target_type as "targetType", price, promo_price as "promoPrice", cost_price as "costPrice", stock, min_stock as "minStock", image, description, badge, sales_count as "salesCount", active, featured, gallery_images as "galleryImages", created_at, updated_at
-    FROM products
-    ORDER BY active DESC, created_at DESC, id ASC
-  `);
-  return rows.map(p => {
-    let gallery = [];
-    try {
-      gallery = JSON.parse(p.galleryImages || '[]');
-    } catch (e) {
-      gallery = [];
-    }
-    return {
-      ...p,
-      targetType: p.targetType || 'crocs',
-      active: Boolean(p.active),
-      featured: Boolean(p.featured),
-      galleryImages: gallery
-    };
-  });
+  const state = await readState();
+  return state.products
+    .slice()
+    .sort((a, b) => Number(b.active) - Number(a.active) || String(b.created_at || '').localeCompare(String(a.created_at || '')))
+    .map(adminProduct);
 }
 
 async function getProductById(id) {
-  return await queryOne('SELECT * FROM products WHERE id = ?', [id]);
+  const state = await readState();
+  const p = state.products.find(p => p.id === id);
+  return p ? adminProduct(p) : null;
+}
+
+function generateSku(state, category, targetType) {
+  const base = sanitizeString(category || (targetType === 'estetoscopio' ? 'EST' : 'PIN'), 20)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 3) || 'PIN';
+  let n = 1;
+  let sku;
+  do { sku = `${base}-${String(n++).padStart(3, '0')}`; } while (state.products.some(p => p.sku === sku));
+  return sku;
 }
 
 async function createProductAdmin(data) {
-  const name = sanitizeString(data.name, 150);
-  if (!name) throw new Error('El nombre del producto es obligatorio.');
-
-  const price = Number(data.price);
-  if (isNaN(price) || price < 0) throw new Error('El precio del producto debe ser mayor o igual a 0.');
-
-  const parsedStock = Number(data.stock ?? 0);
-  const parsedMinStock = Number(data.minStock ?? 3);
-  const parsedCost = Number(data.costPrice ?? 0);
-  const parsedPromo = data.promoPrice === null || data.promoPrice === undefined || data.promoPrice === '' ? null : Number(data.promoPrice);
-  if (!Number.isInteger(parsedStock) || parsedStock < 0) throw new Error('El stock debe ser un entero mayor o igual a 0.');
-  if (!Number.isFinite(parsedMinStock) || parsedMinStock < 0) throw new Error('El stock mínimo debe ser mayor o igual a 0.');
-  if (!Number.isFinite(parsedCost) || parsedCost < 0) throw new Error('El costo debe ser mayor o igual a 0.');
-  if (parsedPromo !== null && (!Number.isFinite(parsedPromo) || parsedPromo < 0)) throw new Error('El precio promocional es inválido.');
-  const stock = parsedStock;
-  const minStock = Math.trunc(parsedMinStock);
-  const costPrice = parsedCost;
-  const promoPrice = parsedPromo;
-  const targetType = data.targetType === 'estetoscopio' ? 'estetoscopio' : 'crocs';
-  const category = sanitizeString(data.category, 60) || (targetType === 'estetoscopio' ? 'Cardiología' : 'Personajes');
-  const badge = sanitizeString(data.badge, 50);
-  const description = sanitizeString(data.description, 500);
-  const featured = data.featured ? 1 : 0;
-  const image = normalizeProductImageUrl(data.image, true);
-  const galleryImages = JSON.stringify(normalizeGalleryImages(data.galleryImages || [], image));
-  const id = randomId('pin');
-
-  let sku = data.sku ? sanitizeString(data.sku, 30).toUpperCase().replace(/\s+/g, '-') : '';
-  if (!sku) {
-    let prefix = 'PIN';
-    const cleanCat = category.toUpperCase().replace(/[^A-Z]/g, '');
-    if (cleanCat.length >= 3) prefix = cleanCat.substring(0, 3);
-    else if (targetType === 'estetoscopio') prefix = 'EST';
-
-    for (let attempt = 0; attempt < 20; attempt++) {
-      const candidate = `${prefix}-${crypto.randomInt(1000, 10000)}`;
-      const collision = await queryOne('SELECT id FROM products WHERE sku = ?', [candidate]);
-      if (!collision) {
-        sku = candidate;
-        break;
-      }
-    }
-    if (!sku) throw new Error('No se pudo generar un SKU único. Intente nuevamente.');
-  } else {
-    const existingSku = await queryOne('SELECT id FROM products WHERE sku = ?', [sku]);
-    if (existingSku) throw new Error(`El código SKU "${sku}" ya existe.`);
-  }
-
-  const now = new Date().toISOString();
-  await withTransaction(async (tx) => {
-    await tx.runSql(
-      `INSERT INTO products (
-        id, sku, name, category, target_type, price, promo_price, cost_price, stock, min_stock,
-        image, description, badge, sales_count, active, featured, gallery_images, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        id, sku, name, category, targetType, price, promoPrice, costPrice, stock, minStock,
-        image, description, badge, 0, data.active !== undefined ? (data.active ? 1 : 0) : 1,
-        featured, galleryImages, now, now
-      ]
-    );
-
-    if (stock > 0) {
-      await tx.runSql(
-        `INSERT INTO stock_movements (
-          id, product_id, sku, product_name, type, quantity, prev_stock, new_stock, reason, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [randomId('mov'), id, sku, name, 'entrada', stock, 0, stock, 'Stock inicial / Alta de producto', now]
-      );
-    }
+  return mutateState(async state => {
+    const now = new Date().toISOString();
+    const name = sanitizeString(data.name, 150);
+    if (!name) throw new Error('El nombre del producto es obligatorio.');
+    const targetType = data.targetType === 'estetoscopio' ? 'estetoscopio' : 'crocs';
+    const category = sanitizeString(data.category, 60) || 'Otros';
+    const price = Number(data.price);
+    const stock = Math.max(0, Math.trunc(Number(data.stock) || 0));
+    const minStock = Math.max(0, Math.trunc(Number(data.minStock ?? 3) || 0));
+    const costPrice = Math.max(0, Number(data.costPrice) || 0);
+    const promoPrice = data.promoPrice === '' || data.promoPrice === null || data.promoPrice === undefined ? null : Number(data.promoPrice);
+    if (!Number.isFinite(price) || price < 0) throw new Error('El precio debe ser mayor o igual a 0.');
+    if (promoPrice !== null && (!Number.isFinite(promoPrice) || promoPrice < 0)) throw new Error('El precio promocional es inválido.');
+    const image = normalizeProductImageUrl(data.image, true);
+    let sku = data.sku ? sanitizeString(data.sku, 30).toUpperCase().replace(/\s+/g, '-') : generateSku(state, category, targetType);
+    if (state.products.some(p => p.sku === sku)) throw new Error(`El código SKU "${sku}" ya existe.`);
+    const id = randomId('prod');
+    const gallery = normalizeGalleryImages(data.galleryImages || [], image);
+    const product = {
+      id, sku, name, category, target_type: targetType, price, promo_price: promoPrice,
+      cost_price: costPrice, stock, min_stock: minStock, image,
+      description: sanitizeString(data.description || '', 500), badge: sanitizeString(data.badge || '', 50),
+      sales_count: 0, active: data.active === false ? 0 : 1, featured: data.featured ? 1 : 0,
+      gallery_images: gallery, created_at: now, updated_at: now
+    };
+    state.products.push(product);
+    if (stock > 0) state.stock_movements.push({ id: randomId('mov'), product_id: id, sku, product_name: name, type: 'entrada', quantity: stock, prev_stock: 0, new_stock: stock, reason: 'Stock inicial / Alta de producto', order_id: null, created_at: now });
+    return adminProduct(product);
   });
-
-  return await queryOne('SELECT * FROM products WHERE id = ?', [id]);
 }
 
 async function updateProductAdmin(id, data) {
-  const current = await queryOne('SELECT * FROM products WHERE id = ?', [id]);
-  if (!current) throw new Error('Producto no encontrado');
-
-  const now = new Date().toISOString();
-  let sku = data.sku ? sanitizeString(data.sku, 30).toUpperCase().replace(/\s+/g, '-') : current.sku;
-
-  if (sku !== current.sku) {
-    const existing = await queryOne('SELECT id FROM products WHERE sku = ? AND id != ?', [sku, id]);
-    if (existing) throw new Error(`El código SKU "${sku}" ya pertenece a otro producto.`);
-  }
-
-  const nextName = data.name !== undefined ? sanitizeString(data.name, 150) : current.name;
-  if (!nextName) throw new Error('El nombre del producto es obligatorio.');
-  const nextPrice = data.price !== undefined ? Number(data.price) : Number(current.price);
-  const nextPromo = data.promoPrice !== undefined
-    ? (data.promoPrice === null || data.promoPrice === '' ? null : Number(data.promoPrice))
-    : current.promo_price;
-  const nextCost = data.costPrice !== undefined ? Number(data.costPrice) : Number(current.cost_price || 0);
-  const nextMinStock = data.minStock !== undefined ? Number(data.minStock) : Number(current.min_stock || 0);
-  if (!Number.isFinite(nextPrice) || nextPrice < 0) throw new Error('El precio debe ser mayor o igual a 0.');
-  if (nextPromo !== null && (!Number.isFinite(nextPromo) || nextPromo < 0)) throw new Error('El precio promocional es inválido.');
-  if (!Number.isFinite(nextCost) || nextCost < 0) throw new Error('El costo debe ser mayor o igual a 0.');
-  if (!Number.isFinite(nextMinStock) || nextMinStock < 0) throw new Error('El stock mínimo debe ser mayor o igual a 0.');
-  const nextImage = data.image !== undefined
-    ? (data.image === current.image ? current.image : normalizeProductImageUrl(data.image, true))
-    : current.image;
-  const galleryImages = data.galleryImages !== undefined
-    ? JSON.stringify(normalizeGalleryImages(data.galleryImages, nextImage))
-    : current.gallery_images;
-
-  await runSql(
-    `UPDATE products SET
-      sku = ?,
-      name = ?,
-      category = ?,
-      target_type = ?,
-      price = ?,
-      promo_price = ?,
-      cost_price = ?,
-      min_stock = ?,
-      image = ?,
-      description = ?,
-      badge = ?,
-      active = ?,
-      featured = ?,
-      gallery_images = ?,
-      updated_at = ?
-    WHERE id = ?`,
-    [
-      sku,
-      nextName,
-      data.category !== undefined ? sanitizeString(data.category, 60) : current.category,
-      data.targetType !== undefined ? (data.targetType === 'estetoscopio' ? 'estetoscopio' : 'crocs') : (current.target_type || 'crocs'),
-      nextPrice,
-      nextPromo,
-      nextCost,
-      Math.trunc(nextMinStock),
-      nextImage,
-      data.description !== undefined ? sanitizeString(data.description, 500) : current.description,
-      data.badge !== undefined ? sanitizeString(data.badge, 50) : current.badge,
-      data.active !== undefined ? (data.active ? 1 : 0) : current.active,
-      data.featured !== undefined ? (data.featured ? 1 : 0) : (current.featured || 0),
-      galleryImages,
-      now,
-      id
-    ]
-  );
-
-  persistDb();
-  return await queryOne('SELECT * FROM products WHERE id = ?', [id]);
+  return mutateState(async state => {
+    const p = state.products.find(p => p.id === id);
+    if (!p) throw new Error('Producto no encontrado');
+    const now = new Date().toISOString();
+    if (data.sku !== undefined) {
+      const sku = sanitizeString(data.sku, 30).toUpperCase().replace(/\s+/g, '-');
+      if (!sku) throw new Error('El SKU es obligatorio.');
+      if (state.products.some(x => x.id !== id && x.sku === sku)) throw new Error(`El código SKU "${sku}" ya pertenece a otro producto.`);
+      p.sku = sku;
+    }
+    if (data.name !== undefined) { const name = sanitizeString(data.name, 150); if (!name) throw new Error('El nombre es obligatorio.'); p.name = name; }
+    if (data.category !== undefined) p.category = sanitizeString(data.category, 60) || p.category;
+    if (data.targetType !== undefined) p.target_type = data.targetType === 'estetoscopio' ? 'estetoscopio' : 'crocs';
+    if (data.price !== undefined) { const v = Number(data.price); if (!Number.isFinite(v) || v < 0) throw new Error('Precio inválido.'); p.price = v; }
+    if (data.promoPrice !== undefined) { const v = data.promoPrice === '' || data.promoPrice === null ? null : Number(data.promoPrice); if (v !== null && (!Number.isFinite(v) || v < 0)) throw new Error('Precio promocional inválido.'); p.promo_price = v; }
+    if (data.costPrice !== undefined) { const v = Number(data.costPrice); if (!Number.isFinite(v) || v < 0) throw new Error('Costo inválido.'); p.cost_price = v; }
+    if (data.minStock !== undefined) { const v = Number(data.minStock); if (!Number.isFinite(v) || v < 0) throw new Error('Stock mínimo inválido.'); p.min_stock = Math.trunc(v); }
+    if (data.image !== undefined) p.image = data.image === p.image ? p.image : normalizeProductImageUrl(data.image, true);
+    if (data.galleryImages !== undefined) p.gallery_images = normalizeGalleryImages(data.galleryImages, p.image);
+    if (data.description !== undefined) p.description = sanitizeString(data.description, 500);
+    if (data.badge !== undefined) p.badge = sanitizeString(data.badge, 50);
+    if (data.active !== undefined) p.active = data.active ? 1 : 0;
+    if (data.featured !== undefined) p.featured = data.featured ? 1 : 0;
+    p.updated_at = now;
+    return adminProduct(p);
+  });
 }
 
 async function adjustStockAdmin(productId, payload) {
-  const result = await withTransaction(async (tx) => {
-    const lockSql = isPostgres
-      ? 'SELECT * FROM products WHERE id = ? FOR UPDATE'
-      : 'SELECT * FROM products WHERE id = ?';
-    const prod = await tx.queryOne(lockSql, [productId]);
-    if (!prod) throw new Error('Producto no encontrado');
-
-    const prevStock = Number(prod.stock) || 0;
-    let newStock;
-    let quantityChange;
-    let movType = 'ajuste';
-
-    const { type, delta, stock: targetStock, quantity, reason = 'Ajuste manual de inventario' } = payload;
-
-    if (type === 'entrada') {
-      quantityChange = Math.abs(Number(quantity || delta || 0));
-      newStock = prevStock + quantityChange;
-      movType = 'entrada';
-    } else if (type === 'salida') {
-      quantityChange = -Math.abs(Number(quantity || delta || 0));
-      newStock = Math.max(0, prevStock + quantityChange);
-      movType = 'ajuste';
-    } else if (type === 'fijo' || targetStock !== undefined) {
-      const desired = targetStock !== undefined ? targetStock : quantity;
-      newStock = Math.max(0, Number(desired) || 0);
-      quantityChange = newStock - prevStock;
-      movType = quantityChange >= 0 ? 'entrada' : 'ajuste';
-    } else if (delta !== undefined) {
-      quantityChange = Number(delta);
-      newStock = Math.max(0, prevStock + quantityChange);
-      movType = quantityChange > 0 ? 'entrada' : 'ajuste';
-    } else {
-      throw new Error('Debe especificar tipo de ajuste (entrada, salida, fijo) o cantidad.');
-    }
-
-    if (!Number.isFinite(quantityChange)) throw new Error('Cantidad de stock inválida.');
-
-    const now = new Date().toISOString();
+  return mutateState(async state => {
+    const p = state.products.find(p => p.id === productId);
+    if (!p) throw new Error('Producto no encontrado');
+    const prevStock = Number(p.stock) || 0;
+    let newStock, delta, movType = 'ajuste';
+    const { type, stock: targetStock, quantity, reason = 'Ajuste manual de inventario' } = payload || {};
+    if (type === 'entrada') { delta = Math.abs(Number(quantity || 0)); newStock = prevStock + delta; movType = 'entrada'; }
+    else if (type === 'salida') { const q = Math.abs(Number(quantity || 0)); delta = -Math.min(prevStock, q); newStock = prevStock + delta; }
+    else if (type === 'fijo' || targetStock !== undefined) { newStock = Math.max(0, Math.trunc(Number(targetStock ?? quantity) || 0)); delta = newStock - prevStock; movType = delta >= 0 ? 'entrada' : 'ajuste'; }
+    else throw new Error('Debe especificar entrada, salida o stock fijo.');
+    if (!Number.isFinite(delta)) throw new Error('Cantidad de stock inválida.');
+    p.stock = newStock;
+    p.updated_at = new Date().toISOString();
     const safeReason = sanitizeString(reason, 200) || 'Ajuste de inventario';
-
-    await tx.runSql('UPDATE products SET stock = ?, updated_at = ? WHERE id = ?', [newStock, now, productId]);
-    await tx.runSql(
-      `INSERT INTO stock_movements (
-        id, product_id, sku, product_name, type, quantity, prev_stock, new_stock, reason, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [randomId('mov'), prod.id, prod.sku, prod.name, movType, quantityChange, prevStock, newStock, safeReason, now]
-    );
-
-    return {
-      success: true,
-      productId: prod.id,
-      sku: prod.sku,
-      prevStock,
-      newStock,
-      delta: quantityChange,
-      reason: safeReason
-    };
+    state.stock_movements.push({ id: randomId('mov'), product_id: p.id, sku: p.sku, product_name: p.name, type: movType, quantity: delta, prev_stock: prevStock, new_stock: newStock, reason: safeReason, order_id: null, created_at: p.updated_at });
+    return { success: true, productId: p.id, sku: p.sku, prevStock, newStock, delta, reason: safeReason };
   });
-
-  return result;
 }
 
-// ==========================================
-// DYNAMIC CATEGORIES MANAGEMENT
-// ==========================================
-
 async function getCategories(targetType = null) {
-  let sql = 'SELECT id, name, target_type as "targetType", active FROM categories WHERE active = 1';
-  const params = [];
-  if (targetType) {
-    sql += ' AND target_type = ?';
-    params.push(targetType);
-  }
-  sql += ' ORDER BY name ASC';
-  return await queryAll(sql, params);
+  const state = await readState();
+  return state.categories.filter(c => Boolean(c.active) && (!targetType || c.target_type === targetType)).sort((a,b) => a.name.localeCompare(b.name)).map(c => ({ ...c, targetType: c.target_type, active: Boolean(c.active) }));
 }
 
 async function getAllCategoriesAdmin() {
-  return await queryAll('SELECT id, name, target_type as "targetType", active, created_at as "createdAt" FROM categories ORDER BY active DESC, target_type ASC, name ASC');
-}
-
-async function updateCategoryAdmin(id, { name, targetType, active }) {
-  const current = await queryOne('SELECT * FROM categories WHERE id = ?', [id]);
-  if (!current) throw new Error('Categoría no encontrada.');
-  const safeName = name !== undefined ? sanitizeString(name, 50) : current.name;
-  if (!safeName) throw new Error('El nombre de la categoría es obligatorio.');
-  const type = targetType !== undefined ? (targetType === 'estetoscopio' ? 'estetoscopio' : 'crocs') : current.target_type;
-  const duplicate = await queryOne('SELECT id FROM categories WHERE LOWER(name) = LOWER(?) AND target_type = ? AND id != ?', [safeName, type, id]);
-  if (duplicate) throw new Error(`Ya existe una categoría llamada "${safeName}" en esa línea.`);
-  const activeValue = active !== undefined ? (active ? 1 : 0) : current.active;
-  await runSql('UPDATE categories SET name = ?, target_type = ?, active = ? WHERE id = ?', [safeName, type, activeValue, id]);
-  // Keep existing products consistent when a category is renamed.
-  if (safeName !== current.name || type !== current.target_type) {
-    await runSql('UPDATE products SET category = ?, target_type = ?, updated_at = ? WHERE category = ? AND target_type = ?', [safeName, type, new Date().toISOString(), current.name, current.target_type]);
-  }
-  persistDb();
-  return await queryOne('SELECT id, name, target_type as "targetType", active FROM categories WHERE id = ?', [id]);
-}
-
-async function activateCategoryAdmin(id) {
-  const current = await queryOne('SELECT id FROM categories WHERE id = ?', [id]);
-  if (!current) throw new Error('Categoría no encontrada.');
-  await runSql('UPDATE categories SET active = 1 WHERE id = ?', [id]);
-  persistDb();
-  return { success: true, id };
+  const state = await readState();
+  return state.categories.slice().sort((a,b) => Number(b.active)-Number(a.active) || a.target_type.localeCompare(b.target_type) || a.name.localeCompare(b.name)).map(c => ({ ...c, targetType: c.target_type, active: Boolean(c.active), createdAt: c.created_at }));
 }
 
 async function createCategoryAdmin({ name, targetType = 'crocs' }) {
-  const safeName = sanitizeString(name, 50);
-  if (!safeName) throw new Error('El nombre de la categoría es obligatorio.');
-
-  const type = targetType === 'estetoscopio' ? 'estetoscopio' : 'crocs';
-  const existing = await queryOne('SELECT id FROM categories WHERE LOWER(name) = LOWER(?) AND target_type = ?', [safeName, type]);
-  if (existing) {
-    // If it was inactive, reactivate it
-    await runSql('UPDATE categories SET active = 1 WHERE id = ?', [existing.id]);
-    persistDb();
-    return await queryOne('SELECT id, name, target_type as "targetType", active FROM categories WHERE id = ?', [existing.id]);
-  }
-
-  const id = 'cat-' + Date.now().toString(36);
-  const now = new Date().toISOString();
-  await runSql(
-    'INSERT INTO categories (id, name, target_type, active, created_at) VALUES (?, ?, ?, 1, ?)',
-    [id, safeName, type, now]
-  );
-  persistDb();
-  return await queryOne('SELECT id, name, target_type as "targetType", active FROM categories WHERE id = ?', [id]);
-}
-
-async function deleteCategoryAdmin(id) {
-  await runSql('UPDATE categories SET active = 0 WHERE id = ?', [id]);
-  persistDb();
-  return { success: true, id };
-}
-
-async function softDeleteProductAdmin(id) {
-  const prod = await queryOne('SELECT * FROM products WHERE id = ?', [id]);
-  if (!prod) throw new Error('Producto no encontrado');
-
-  const now = new Date().toISOString();
-  await runSql('UPDATE products SET active = 0, updated_at = ? WHERE id = ?', [now, id]);
-  persistDb();
-  return { success: true, id, message: 'Producto desactivado (conservando historial comercial).' };
-}
-
-async function getAllOrdersAdmin() {
-  const orders = await queryAll('SELECT * FROM orders ORDER BY created_at DESC');
-  const out = [];
-  for (const ord of orders) {
-    const items = await queryAll('SELECT * FROM order_items WHERE order_id = ?', [ord.id]);
-    const itemsDetailed = [];
-    for (const it of items) {
-      const prod = await queryOne('SELECT image FROM products WHERE id = ?', [it.product_id]);
-      itemsDetailed.push({
-        productId: it.product_id,
-        sku: it.sku,
-        name: it.product_name,
-        price: it.price,
-        quantity: it.quantity,
-        lineTotal: it.line_total,
-        image: prod ? prod.image : '/images/pins/estetoscopio-pin.webp'
-      });
-    }
-
-    out.push({
-      id: ord.id,
-      createdAt: ord.created_at,
-      customer: {
-        name: ord.customer_name,
-        phone: ord.customer_phone,
-        deliveryType: ord.delivery_type,
-        address: ord.address,
-        paymentMethod: ord.payment_method,
-        notes: ord.notes
-      },
-      items: itemsDetailed,
-      subtotal: ord.subtotal,
-      deliveryFee: ord.delivery_fee,
-      total: ord.total,
-      status: ord.status,
-      stockDeducted: Boolean(ord.stock_deducted),
-      confirmedAt: ord.confirmed_at,
-      deliveredAt: ord.delivered_at,
-      cancelledAt: ord.cancelled_at
-    });
-  }
-  return out;
-}
-
-// Confirm order with one real transaction and row locks on PostgreSQL.
-async function confirmOrderStockAdmin(orderId) {
-  return await withTransaction(async (tx) => {
-    const orderSql = isPostgres
-      ? 'SELECT * FROM orders WHERE id = ? FOR UPDATE'
-      : 'SELECT * FROM orders WHERE id = ?';
-    const order = await tx.queryOne(orderSql, [orderId]);
-    if (!order) throw new Error('Pedido no encontrado');
-
-    if (order.stock_deducted === 1 || order.stock_deducted === true) {
-      throw new Error('El stock de este pedido ya fue descontado anteriormente.');
-    }
-    if (order.status === 'cancelled' || order.status === 'delivered') {
-      throw new Error('Este pedido no puede ser confirmado en su estado actual.');
-    }
-
-    const items = await tx.queryAll('SELECT * FROM order_items WHERE order_id = ?', [orderId]);
-    if (items.length === 0) throw new Error('El pedido no contiene productos.');
-
-    const lockedProducts = new Map();
-    for (const item of items) {
-      const prodSql = isPostgres
-        ? 'SELECT * FROM products WHERE id = ? FOR UPDATE'
-        : 'SELECT * FROM products WHERE id = ?';
-      const prod = await tx.queryOne(prodSql, [item.product_id]);
-      if (!prod) throw new Error(`El producto "${item.product_name}" ya no existe en el catálogo.`);
-      if (Number(prod.stock) < Number(item.quantity)) {
-        throw new Error(
-          `⚠ Stock insuficiente para confirmar la venta: el pin "${prod.name}" (${prod.sku}) solo tiene ${prod.stock} unidad(es) física(s) y el pedido requiere ${item.quantity}.`
-        );
-      }
-      lockedProducts.set(item.product_id, prod);
-    }
-
-    const now = new Date().toISOString();
-    const deductions = [];
-
-    for (const item of items) {
-      const prod = lockedProducts.get(item.product_id);
-      const prevStock = Number(prod.stock) || 0;
-      const newStock = prevStock - Number(item.quantity);
-      const newSalesCount = (Number(prod.sales_count) || 0) + Number(item.quantity);
-
-      await tx.runSql(
-        'UPDATE products SET stock = ?, sales_count = ?, updated_at = ? WHERE id = ?',
-        [newStock, newSalesCount, now, prod.id]
-      );
-
-      await tx.runSql(
-        `INSERT INTO stock_movements (
-          id, product_id, sku, product_name, type, quantity, prev_stock, new_stock, reason, order_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          randomId('mov'), prod.id, prod.sku, prod.name, 'venta', -Number(item.quantity),
-          prevStock, newStock, `Venta pedido #${orderId}`, orderId, now
-        ]
-      );
-
-      deductions.push({ id: prod.id, sku: prod.sku, name: prod.name, prevStock, newStock, quantity: Number(item.quantity) });
-    }
-
-    await tx.runSql(
-      'UPDATE orders SET status = ?, stock_deducted = 1, confirmed_at = ? WHERE id = ?',
-      ['confirmed', now, orderId]
-    );
-
-    return {
-      success: true,
-      orderId,
-      status: 'confirmed',
-      deductions,
-      message: '¡Venta confirmada y stock descontado con éxito!'
-    };
+  return mutateState(async state => {
+    const safeName = sanitizeString(name, 50);
+    if (!safeName) throw new Error('El nombre de la categoría es obligatorio.');
+    const type = targetType === 'estetoscopio' ? 'estetoscopio' : 'crocs';
+    const existing = state.categories.find(c => c.target_type === type && c.name.toLowerCase() === safeName.toLowerCase());
+    if (existing) { existing.active = 1; return { ...existing, targetType: type, active: true }; }
+    const c = { id: randomId('cat'), name: safeName, target_type: type, active: 1, created_at: new Date().toISOString() };
+    state.categories.push(c);
+    return { ...c, targetType: type, active: true };
   });
 }
 
-// Restore stock if order is cancelled, using the same transaction/row-lock guarantees.
-async function restoreOrderStockAdmin(orderId) {
-  return await withTransaction(async (tx) => {
-    const orderSql = isPostgres
-      ? 'SELECT * FROM orders WHERE id = ? FOR UPDATE'
-      : 'SELECT * FROM orders WHERE id = ?';
-    const order = await tx.queryOne(orderSql, [orderId]);
-    if (!order) throw new Error('Pedido no encontrado');
-
-    const now = new Date().toISOString();
-
-    if (order.stock_deducted === 0 || order.stock_deducted === false) {
-      await tx.runSql(
-        'UPDATE orders SET status = ?, cancelled_at = ? WHERE id = ?',
-        ['cancelled', now, orderId]
-      );
-      return { success: true, message: 'Pedido cancelado (ningún stock había sido descontado).' };
+async function updateCategoryAdmin(id, { name, targetType, active }) {
+  return mutateState(async state => {
+    const c = state.categories.find(c => c.id === id);
+    if (!c) throw new Error('Categoría no encontrada.');
+    const oldName = c.name, oldType = c.target_type;
+    const nextName = name !== undefined ? sanitizeString(name, 50) : c.name;
+    const nextType = targetType !== undefined ? (targetType === 'estetoscopio' ? 'estetoscopio' : 'crocs') : c.target_type;
+    if (!nextName) throw new Error('El nombre de la categoría es obligatorio.');
+    if (state.categories.some(x => x.id !== id && x.target_type === nextType && x.name.toLowerCase() === nextName.toLowerCase())) throw new Error(`Ya existe una categoría llamada "${nextName}" en esa línea.`);
+    c.name = nextName; c.target_type = nextType; if (active !== undefined) c.active = active ? 1 : 0;
+    if (oldName !== nextName || oldType !== nextType) {
+      const now = new Date().toISOString();
+      state.products.filter(p => p.category === oldName && p.target_type === oldType).forEach(p => { p.category = nextName; p.target_type = nextType; p.updated_at = now; });
     }
+    return { ...c, targetType: c.target_type, active: Boolean(c.active) };
+  });
+}
 
-    const items = await tx.queryAll('SELECT * FROM order_items WHERE order_id = ?', [orderId]);
+async function activateCategoryAdmin(id) {
+  return mutateState(async state => { const c = state.categories.find(c => c.id === id); if (!c) throw new Error('Categoría no encontrada.'); c.active = 1; return { success: true, id }; });
+}
+async function deleteCategoryAdmin(id) {
+  return mutateState(async state => { const c = state.categories.find(c => c.id === id); if (!c) throw new Error('Categoría no encontrada.'); c.active = 0; return { success: true, id }; });
+}
+async function softDeleteProductAdmin(id) {
+  return mutateState(async state => { const p = state.products.find(p => p.id === id); if (!p) throw new Error('Producto no encontrado'); p.active = 0; p.updated_at = new Date().toISOString(); return { success: true, id, message: 'Producto desactivado (conservando historial comercial).' }; });
+}
+
+async function getAllOrdersAdmin() {
+  const state = await readState();
+  return state.orders.slice().sort((a,b) => String(b.created_at).localeCompare(String(a.created_at))).map(o => ({
+    id: o.id,
+    customer: { name: o.customer_name, phone: o.customer_phone, deliveryType: o.delivery_type, address: o.address, paymentMethod: o.payment_method, notes: o.notes },
+    items: state.order_items.filter(i => i.order_id === o.id).map(i => ({ productId: i.product_id, sku: i.sku, name: i.product_name, price: i.price, quantity: i.quantity, lineTotal: i.line_total, image: state.products.find(p => p.id === i.product_id)?.image || '' })),
+    subtotal: o.subtotal, deliveryFee: o.delivery_fee, total: o.total, status: o.status, stockDeducted: Boolean(o.stock_deducted), confirmedAt: o.confirmed_at, deliveredAt: o.delivered_at, cancelledAt: o.cancelled_at, createdAt: o.created_at
+  }));
+}
+
+async function confirmOrderStockAdmin(orderId) {
+  return mutateState(async state => {
+    const o = state.orders.find(o => o.id === orderId);
+    if (!o) throw new Error('Pedido no encontrado');
+    if (o.status === 'cancelled') throw new Error('El pedido está cancelado.');
+    if (o.stock_deducted) return { success: true, message: 'El stock ya había sido descontado.' };
+    const items = state.order_items.filter(i => i.order_id === orderId);
     for (const item of items) {
-      const prodSql = isPostgres
-        ? 'SELECT * FROM products WHERE id = ? FOR UPDATE'
-        : 'SELECT * FROM products WHERE id = ?';
-      const prod = await tx.queryOne(prodSql, [item.product_id]);
-      if (!prod) continue;
-
-      const prevStock = Number(prod.stock) || 0;
-      const qty = Number(item.quantity) || 0;
-      const newStock = prevStock + qty;
-      const newSalesCount = Math.max(0, (Number(prod.sales_count) || 0) - qty);
-
-      await tx.runSql(
-        'UPDATE products SET stock = ?, sales_count = ?, updated_at = ? WHERE id = ?',
-        [newStock, newSalesCount, now, prod.id]
-      );
-
-      await tx.runSql(
-        `INSERT INTO stock_movements (
-          id, product_id, sku, product_name, type, quantity, prev_stock, new_stock, reason, order_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          randomId('mov'), prod.id, prod.sku, prod.name, 'estorno', qty,
-          prevStock, newStock, `Estorno pedido #${orderId}`, orderId, now
-        ]
-      );
+      const p = state.products.find(p => p.id === item.product_id);
+      if (!p) throw new Error(`Producto no encontrado: ${item.product_name}`);
+      if (Number(p.stock) < Number(item.quantity)) throw new Error(`Stock insuficiente para ${p.name}. Disponible: ${p.stock}.`);
     }
+    const now = new Date().toISOString();
+    for (const item of items) {
+      const p = state.products.find(p => p.id === item.product_id);
+      const prev = Number(p.stock) || 0, qty = Number(item.quantity) || 0, next = prev - qty;
+      p.stock = next; p.sales_count = (Number(p.sales_count)||0) + qty; p.updated_at = now;
+      state.stock_movements.push({ id: randomId('mov'), product_id: p.id, sku: p.sku, product_name: p.name, type: 'venta', quantity: -qty, prev_stock: prev, new_stock: next, reason: `Venta pedido #${orderId}`, order_id: orderId, created_at: now });
+    }
+    o.status = 'confirmed'; o.stock_deducted = 1; o.confirmed_at = now;
+    return { success: true, orderId, status: 'confirmed', message: 'Pedido confirmado y stock descontado.' };
+  });
+}
 
-    await tx.runSql(
-      'UPDATE orders SET status = ?, stock_deducted = 0, cancelled_at = ? WHERE id = ?',
-      ['cancelled', now, orderId]
-    );
-
+async function restoreOrderStockAdmin(orderId) {
+  return mutateState(async state => {
+    const o = state.orders.find(o => o.id === orderId);
+    if (!o) throw new Error('Pedido no encontrado');
+    const now = new Date().toISOString();
+    if (!o.stock_deducted) { o.status = 'cancelled'; o.cancelled_at = now; return { success: true, message: 'Pedido cancelado.' }; }
+    const items = state.order_items.filter(i => i.order_id === orderId);
+    for (const item of items) {
+      const p = state.products.find(p => p.id === item.product_id); if (!p) continue;
+      const prev = Number(p.stock)||0, qty = Number(item.quantity)||0, next = prev + qty;
+      p.stock = next; p.sales_count = Math.max(0, (Number(p.sales_count)||0)-qty); p.updated_at = now;
+      state.stock_movements.push({ id: randomId('mov'), product_id: p.id, sku: p.sku, product_name: p.name, type: 'estorno', quantity: qty, prev_stock: prev, new_stock: next, reason: `Estorno pedido #${orderId}`, order_id: orderId, created_at: now });
+    }
+    o.status = 'cancelled'; o.stock_deducted = 0; o.cancelled_at = now;
     return { success: true, message: 'Stock estornado y pedido cancelado con éxito.' };
   });
 }
 
-// Strict order lifecycle: ONLY confirmed orders (with deducted stock) can be marked as delivered!
 async function markOrderDeliveredAdmin(orderId) {
-  const order = await queryOne('SELECT * FROM orders WHERE id = ?', [orderId]);
-  if (!order) throw new Error('Pedido no encontrado');
-
-  if (order.status !== 'confirmed') {
-    throw new Error('Solo un pedido previamente confirmado (con stock descontado) puede marcarse como entregado.');
-  }
-
-  const now = new Date().toISOString();
-  await runSql('UPDATE orders SET status = ?, delivered_at = ? WHERE id = ?', ['delivered', now, orderId]);
-  persistDb();
-
-  return { success: true, orderId, status: 'delivered', message: 'Pedido marcado como entregado con éxito.' };
+  return mutateState(async state => { const o = state.orders.find(o => o.id === orderId); if (!o) throw new Error('Pedido no encontrado'); if (o.status !== 'confirmed') throw new Error('Solo un pedido confirmado puede marcarse como entregado.'); o.status='delivered'; o.delivered_at=new Date().toISOString(); return { success:true, orderId, status:'delivered', message:'Pedido marcado como entregado.' }; });
 }
 
 async function getStockMovementsAdmin(limit = 100) {
-  return await queryAll(
-    `SELECT * FROM stock_movements ORDER BY created_at DESC LIMIT ?`,
-    [limit]
-  );
+  const state = await readState();
+  return state.stock_movements.slice().sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))).slice(0, limit);
 }
 
 async function getStatsAdmin() {
-  const products = await queryAll('SELECT * FROM products WHERE active = 1 OR active = true');
-  const allProductsCount = await queryOne('SELECT COUNT(*) as count FROM products');
-  const orders = await queryAll('SELECT * FROM orders');
-
-  const totalProducts = allProductsCount ? Number(allProductsCount.count) : 0;
+  const state = await readState();
+  const products = state.products.filter(p => Boolean(p.active));
+  const orders = state.orders;
+  const totalProducts = state.products.length;
   const activeProducts = products.length;
-  const totalStockUnits = products.reduce((acc, p) => acc + (Number(p.stock) || 0), 0);
-  const totalInventoryRetailValue = products.reduce((acc, p) => acc + ((Number(p.stock) || 0) * (Number(p.price) || 0)), 0);
-  const totalInventoryCostValue = products.reduce((acc, p) => acc + ((Number(p.stock) || 0) * (Number(p.cost_price) || 0)), 0);
-  const potentialProfit = totalInventoryRetailValue - totalInventoryCostValue;
-
-  const outOfStockCount = products.filter(p => (Number(p.stock) || 0) <= 0).length;
-  const lowStockCount = products.filter(p => (Number(p.stock) || 0) > 0 && (Number(p.stock) || 0) <= (Number(p.min_stock) || 3)).length;
-
-  const totalOrders = orders.length;
-  const confirmedOrders = orders.filter(o => o.status === 'confirmed').length;
-  const deliveredOrders = orders.filter(o => o.status === 'delivered').length;
-  const pendingOrders = orders.filter(o => o.status === 'pending').length;
-  const cancelledOrders = orders.filter(o => o.status === 'cancelled').length;
-  
-  // Real Conversion Rate %: (confirmed + delivered) / totalOrders
-  const conversionRate = totalOrders > 0
-    ? Math.round(((confirmedOrders + deliveredOrders) / totalOrders) * 100)
-    : 0;
-
-  const confirmedRevenue = orders
-    .filter(o => o.status === 'confirmed' || o.status === 'delivered')
-    .reduce((acc, o) => acc + (Number(o.total) || 0), 0);
-
-  const topSellers = await queryAll(
-    `SELECT id, sku, name, category, sales_count as "salesCount", stock, image
-     FROM products
-     ORDER BY sales_count DESC
-     LIMIT 10`
-  );
-
+  const totalStockUnits = products.reduce((a,p)=>a+(Number(p.stock)||0),0);
+  const totalInventoryRetailValue = products.reduce((a,p)=>a+(Number(p.stock)||0)*(Number(p.price)||0),0);
+  const totalInventoryCostValue = products.reduce((a,p)=>a+(Number(p.stock)||0)*(Number(p.cost_price)||0),0);
+  const outOfStockCount = products.filter(p => Number(p.stock)<=0).length;
+  const lowStockCount = products.filter(p => Number(p.stock)>0 && Number(p.stock)<=Number(p.min_stock||3)).length;
+  const confirmedOrders = orders.filter(o=>o.status==='confirmed').length;
+  const deliveredOrders = orders.filter(o=>o.status==='delivered').length;
+  const pendingOrders = orders.filter(o=>o.status==='pending').length;
+  const cancelledOrders = orders.filter(o=>o.status==='cancelled').length;
+  const confirmedRevenue = orders.filter(o=>o.status==='confirmed'||o.status==='delivered').reduce((a,o)=>a+(Number(o.total)||0),0);
   return {
-    totalProducts,
-    activeProducts,
-    totalStockUnits,
-    totalInventoryRetailValue,
-    totalInventoryCostValue,
-    potentialProfit,
-    outOfStockCount,
-    lowStockCount,
-    totalOrders,
-    confirmedOrders,
-    deliveredOrders,
-    pendingOrders,
-    cancelledOrders,
-    conversionRate,
+    totalProducts, activeProducts, totalStockUnits, totalInventoryRetailValue, totalInventoryCostValue,
+    potentialProfit: totalInventoryRetailValue-totalInventoryCostValue,
+    outOfStockCount, lowStockCount, totalOrders: orders.length, confirmedOrders, deliveredOrders, pendingOrders, cancelledOrders,
+    conversionRate: orders.length ? Math.round(((confirmedOrders+deliveredOrders)/orders.length)*100) : 0,
     confirmedRevenue,
-    topSellers
+    topSellers: state.products.slice().sort((a,b)=>Number(b.sales_count||0)-Number(a.sales_count||0)).slice(0,10).map(p=>({ id:p.id, sku:p.sku, name:p.name, category:p.category, salesCount:Number(p.sales_count)||0, stock:Number(p.stock)||0, image:p.image }))
   };
 }
 
 async function updateSettingsAdmin(newSettings) {
-  for (const [key, originalVal] of Object.entries(newSettings)) {
-    if (key !== 'adminPassword' && key !== 'jwtSecret') {
-      const val = key === 'whatsappNumber' ? normalizeParaguayWhatsapp(originalVal) : originalVal;
-      if (isPostgres) {
-        await runSql(
-          'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value',
-          [key, JSON.stringify(val)]
-        );
-      } else {
-        await runSql('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, JSON.stringify(val)]);
-      }
+  return mutateState(async state => {
+    for (const [key, original] of Object.entries(newSettings || {})) {
+      if (key === 'adminPassword' || key === 'jwtSecret') continue;
+      state.settings[key] = key === 'whatsappNumber' ? normalizeParaguayWhatsapp(original) : original;
     }
-  }
-  persistDb();
-  return await getPublicSettings();
+    return clone(state.settings);
+  });
 }
 
 module.exports = {
@@ -1662,6 +682,11 @@ module.exports = {
   getStockMovementsAdmin,
   getStatsAdmin,
   updateSettingsAdmin,
+  syncAdminSecurity,
+  beginAdminTotpSetup,
+  getAdminTotpPending,
+  getAdminTotpSecret,
+  confirmAdminTotpSetup,
   getCategories,
   getAllCategoriesAdmin,
   createCategoryAdmin,

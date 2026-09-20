@@ -514,7 +514,7 @@
           <!-- Product Image Container -->
           <div class="card-trigger relative bg-slate-50 aspect-square p-3 sm:p-4 flex items-center justify-center overflow-hidden border-b border-slate-100 group">
             <img 
-              src="${escapeHtml(p.image || '/images/pins/estetoscopio-pin.png')}" 
+              src="${escapeHtml(p.image || '/images/pins/estetoscopio-pin.webp')}" 
               alt="${escapeHtml(p.name)}" 
               class="w-full h-full object-contain filter drop-shadow group-hover:scale-110 transition-transform duration-300"
               loading="lazy"
@@ -679,7 +679,7 @@
 
     document.getElementById('modalProductSku').textContent = `SKU: ${product.sku || 'PIN'}`;
     const imgEl = document.getElementById('modalProductImage');
-    imgEl.src = product.image || '/images/pins/estetoscopio-pin.png';
+    imgEl.src = product.image || '/images/pins/estetoscopio-pin.webp';
     imgEl.alt = product.name || 'Pin PINPOP';
     renderProductGallery(product);
     imgEl.style.transform = 'scale(1)';
@@ -872,7 +872,7 @@
         name: 'Pin Indisponible',
         price: 0,
         stock: 0,
-        image: '/images/pins/estetoscopio-pin.png'
+        image: '/images/pins/estetoscopio-pin.webp'
       };
       const price = p.promoPrice || p.price;
       const lineTotal = price * item.quantity;
@@ -1413,7 +1413,7 @@
       if (container) container.classList.remove('hidden');
     } else {
       if (preview) preview.removeAttribute('src');
-      if (mockup) mockup.src = '/images/pins/estetoscopio-pin.png';
+      if (mockup) mockup.src = '/images/pins/estetoscopio-pin.webp';
       if (container) container.classList.add('hidden');
     }
   }
@@ -1798,7 +1798,7 @@
         document.getElementById('pinCostPriceInput').value = '';
         document.getElementById('pinFeaturedInput').checked = false;
         document.getElementById('prodImagePreviewContainer').classList.add('hidden');
-        document.getElementById('mockupCardImg').src = '/images/pins/estetoscopio-pin.png';
+        document.getElementById('mockupCardImg').src = '/images/pins/estetoscopio-pin.webp';
         document.getElementById('mockupCardName').textContent = 'Nombre del Pin';
 
         if (keepCategory) {
@@ -1926,7 +1926,7 @@
     document.getElementById('adjustProductId').value = p.id;
     document.getElementById('adjustProductName').textContent = p.name;
     document.getElementById('adjustProductSku').textContent = p.sku || 'PIN';
-    document.getElementById('adjustProductImg').src = p.image || '/images/pins/estetoscopio-pin.png';
+    document.getElementById('adjustProductImg').src = p.image || '/images/pins/estetoscopio-pin.webp';
     document.getElementById('adjustCurrentStockBadge').textContent = `Stock actual: ${p.stock || 0} un`;
     document.getElementById('adjustQuantityInput').value = '10';
     document.getElementById('adjustReasonSelect').value = 'Compra proveedor';
@@ -2143,7 +2143,7 @@
     document.getElementById('pinTargetTypeInput').value = currentTargetType;
 
     document.getElementById('prodImagePreviewContainer').classList.add('hidden');
-    document.getElementById('mockupCardImg').src = '/images/pins/estetoscopio-pin.png';
+    document.getElementById('mockupCardImg').src = '/images/pins/estetoscopio-pin.webp';
     document.getElementById('mockupCardName').textContent = 'Nombre del Pin';
     document.getElementById('mockupCardPrice').textContent = 'Gs. 0';
     document.getElementById('pinPriceFormattedLabel').textContent = 'Gs. 0';
@@ -2184,7 +2184,7 @@
     document.getElementById('pinActiveInput').value = p.active ? '1' : '0';
 
     // Mockup card preview
-    document.getElementById('mockupCardImg').src = p.image || '/images/pins/estetoscopio-pin.png';
+    document.getElementById('mockupCardImg').src = p.image || '/images/pins/estetoscopio-pin.webp';
     document.getElementById('mockupCardName').textContent = p.name;
     document.getElementById('mockupCardCategory').textContent = p.category;
     document.getElementById('mockupCardPrice').textContent = formatPrice(p.promoPrice || p.price);

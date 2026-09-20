@@ -1,13 +1,15 @@
 {
   "name": "pinpop-store",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "PINPOP • Catálogo de Pins para Crocs con WhatsApp y Mini-ERP de Stock",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
     "check:security": "node scripts/security-check.js",
-    "check:syntax": "node -c server.js && node -c database.js && node -c storage.js && node -c public/app.js && node -c netlify/functions/api.js"
+    "check:syntax": "node -c server.js && node -c database.js && node -c storage.js && node -c public/app.js && node -c netlify/functions/api.js",
+    "check:release": "node scripts/release-check.js",
+    "check:all": "npm run check:syntax && npm run check:security && npm run check:release"
   },
   "keywords": [
     "pins",

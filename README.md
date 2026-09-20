@@ -110,11 +110,13 @@ crocs-pins-store/
 ├── public/
 │   ├── images/
 │   │   ├── brand/
-│   │   │   ├── pinpop-logo.png      # Logotipo transparente oficial
-│   │   │   └── pinpop-logo-web.png  # Versión optimizada para header web
-│   │   ├── pins/                    # Catálogo de fotos HD de pins y charms
-│   │   ├── crocs-clog.png           # Calzado para simulador
-│   │   └── stethoscope-tube.png     # Tubuladura clínica para simulador
+│   │   │   ├── pinpop-logo-web.png  # Logotipo optimizado para web
+│   │   │   └── logo_on_white.png    # Variante de marca
+│   │   ├── pins/                    # Imágenes WebP optimizadas
+│   │   ├── crocs-clog.webp          # Calzado para simulador
+│   │   └── stethoscope-tube.webp    # Tubuladura clínica para simulador
+│   ├── vendor/icons.js          # Iconos locales; sin CDN externo
+│   ├── tailwind-built.css       # Tailwind precompilado
 │   ├── app.js                   # Lógica SPA, WhatsApp, zoom y simulador
 │   ├── style.css                # Estilos PINPOP Brand Guide & animaciones
 │   └── index.html               # Storefront accesible y responsivo
@@ -136,3 +138,14 @@ crocs-pins-store/
 4. El servidor registra el pedido en estado `pending` y genera un enlace `https://wa.me/595991950031` con el mensaje formateado en Guaraníes.
 5. El cliente envía el mensaje preformateado con un toque y el vendedor recibe el pedido con su código `#P...`.
 6. En el panel `/admin`, el vendedor confirma el pago con el botón **"Confirmar venta & Descontar Stock"**, lo que descuenta las unidades y registra la auditoría.
+
+
+## ✅ Validación antes de deploy
+
+Ejecutar:
+
+```bash
+npm run check:all
+```
+
+La release v2.1.0 utiliza CSS Tailwind precompilado, íconos locales y assets WebP optimizados. El pacote distribuible no debe incluir `.env` ni bases SQLite con datos reales.

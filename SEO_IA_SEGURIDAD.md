@@ -49,15 +49,14 @@ PINPOP debe presentarse como marca independiente. Para productos genéricos, pre
 
 ## Riesgo residual conocido
 
-El frontend todavía utiliza Tailwind Browser CDN y Lucide desde CDN. Lucide está fijado a una versión concreta, pero un recurso JavaScript servido por un tercero sigue siendo una superficie de supply-chain. La siguiente etapa de performance puede compilar Tailwind y servir ambos assets localmente; no se simuló esa migración sin poder descargar/instalar dependencias de forma verificable en este entorno.
+Los scripts críticos del storefront ya no dependen de CDN externos: Tailwind se entrega precompilado y los íconos se sirven localmente. El riesgo residual principal pasa a ser operacional: configuración correcta de secretos, Supabase, DNS/Netlify y nuevas dependencias que puedan agregarse en versiones futuras.
 
 ## Pruebas incluidas
 
 Ejecutar:
 
 ```bash
-npm run check:syntax
-npm run check:security
+npm run check:all
 ```
 
-`check:security` valida de forma estática controles críticos. No sustituye un pentest externo sobre el dominio publicado.
+El comando ejecuta sintaxis, hardening estático y validación de release. Estas verificaciones no sustituyen un pentest externo contra el dominio publicado ni pruebas E2E en navegador real.

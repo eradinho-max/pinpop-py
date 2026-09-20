@@ -27,14 +27,10 @@
   
   <link rel="icon" type="image/png" href="images/brand/pinpop-logo-web.png">
 
-  <!-- Tailwind browser runtime; config is external so CSP does not require inline scripts. -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="tailwind-config.js"></script>
-
-  <!-- Lucide pinned to an explicit version to avoid unbounded supply-chain changes. -->
-  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
-
+  <!-- CSS e íconos locales: sin dependencias CDN en el camino crítico. -->
+  <link rel="stylesheet" href="tailwind-built.css">
   <link rel="stylesheet" href="style.css">
+  <script src="vendor/icons.js"></script>
 </head>
 <body class="bg-[#F4F5F7] text-[#111111] font-sans min-h-screen flex flex-col antialiased selection:bg-[#FF2D8A] selection:text-white">
 
@@ -429,7 +425,7 @@
           <!-- View 1: Crocs Shoe Preview -->
           <div id="simCrocsView" class="relative w-full max-w-md aspect-[4/3] flex items-center justify-center">
             <img 
-              src="images/crocs-clog.png" 
+              src="images/crocs-clog.webp" 
               alt="Calzado Crocs Base" 
               class="w-full h-full object-contain filter drop-shadow-xl select-none"
             />
@@ -441,7 +437,7 @@
           <!-- View 2: Stethoscope Tubing Preview -->
           <div id="simStethView" class="hidden relative w-full max-w-md aspect-[4/3] flex items-center justify-center">
             <img 
-              src="images/stethoscope-tube.png" 
+              src="images/stethoscope-tube.webp" 
               alt="Estetoscopio Clínico Base" 
               class="w-full h-full object-contain filter drop-shadow-xl select-none"
             />
@@ -1196,7 +1192,7 @@
           </div>
           <div class="max-w-[200px] mx-auto bg-white rounded-2xl border border-slate-200 p-2.5 shadow-xs space-y-2 pointer-events-none">
             <div class="aspect-square bg-slate-50 rounded-xl flex items-center justify-center p-2 border border-slate-100">
-              <img id="mockupCardImg" src="images/pins/estetoscopio-pin.png" class="w-full h-full object-contain">
+              <img id="mockupCardImg" src="images/pins/estetoscopio-pin.webp" class="w-full h-full object-contain">
             </div>
             <div>
               <span id="mockupCardCategory" class="text-[9px] font-black text-[#FF2D8A] uppercase">Personajes</span>

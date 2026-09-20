@@ -409,8 +409,47 @@ async function initDatabase() {
   // Seed initial products catalog
   await seedInitialProducts();
 
+  // Migrate legacy local PNG/JPG seed image paths to the optimized WebP assets.
+  // This preserves existing PostgreSQL/Supabase catalogs created by previous PINPOP releases.
+  await migrateLegacyLocalImagePaths();
+
   persistDb();
   console.log('✓ Tablas relacionales inicializadas con éxito.');
+}
+
+async function migrateLegacyLocalImagePaths() {
+  const optimizedPaths = [
+    '/images/pins/avocado-pin.webp',
+    '/images/pins/boba-pin.webp',
+    '/images/pins/capivara-pin.webp',
+    '/images/pins/corazon-rojo-pin.webp',
+    '/images/pins/crocs-jibbitz-charm-stitch-mickey-avenge-2.webp',
+    '/images/pins/crocs-jibbitz-charms-pins-1.webp',
+    '/images/pins/dino-pin.webp',
+    '/images/pins/estetoscopio-pin.webp',
+    '/images/pins/flower-pin.webp',
+    '/images/pins/futbol-pin.webp',
+    '/images/pins/gamer-pin.webp',
+    '/images/pins/gatita-bow-pin.webp',
+    '/images/pins/heart-glitter-pin.webp',
+    '/images/pins/pizza-pin.webp',
+    '/images/pins/steth-charm-duo.webp',
+    '/images/pins/steth-charm-ekg.webp',
+    '/images/pins/steth-charm-paw.webp',
+    '/images/pins/steth-charm-tooth.webp'
+  ];
+
+  for (const nextUrl of optimizedPaths) {
+    const base = nextUrl.slice(0, -5); // remove .webp
+    for (const ext of ['.png', '.jpg', '.jpeg']) {
+      const previousUrl = base + ext;
+      await runSql('UPDATE products SET image = ? WHERE image = ?', [nextUrl, previousUrl]);
+      await runSql(
+        'UPDATE products SET gallery_images = REPLACE(gallery_images, ?, ?) WHERE gallery_images LIKE ?',
+        [previousUrl, nextUrl, `%${previousUrl}%`]
+      );
+    }
+  }
 }
 
 async function seedInitialProducts() {
@@ -425,7 +464,7 @@ async function seedInitialProducts() {
       cost_price: 4000,
       stock: 18,
       min_stock: 5,
-      image: '/images/pins/estetoscopio-pin.png',
+      image: '/images/pins/estetoscopio-pin.webp',
       description: 'Estetoscopio médico en relieve 3D color rosa con dije de corazón rojo. Ideal para enfermeros, médicos y estudiantes de medicina.',
       badge: 'Top Medicina 🩺',
       sales_count: 31
@@ -440,7 +479,7 @@ async function seedInitialProducts() {
       cost_price: 3500,
       stock: 11,
       min_stock: 5,
-      image: '/images/pins/corazon-rojo-pin.png',
+      image: '/images/pins/corazon-rojo-pin.webp',
       description: 'Corazón rojo inflado en alto relieve de goma PVC suave. El detalle romántico y tierno perfecto para combinar.',
       badge: 'En Oferta ❤️',
       sales_count: 38
@@ -455,7 +494,7 @@ async function seedInitialProducts() {
       cost_price: 4200,
       stock: 14,
       min_stock: 4,
-      image: '/images/pins/gatita-bow-pin.png',
+      image: '/images/pins/gatita-bow-pin.webp',
       description: 'Carita tierna de gatita blanca con su icónico lazo rosa. De los pins más pedidos por grandes y chicos.',
       badge: 'Más Vendido ✨',
       sales_count: 41
@@ -470,7 +509,7 @@ async function seedInitialProducts() {
       cost_price: 4000,
       stock: 8,
       min_stock: 3,
-      image: '/images/pins/capivara-pin.png',
+      image: '/images/pins/capivara-pin.webp',
       description: 'El animal más querido de internet con florcita rosa en la cabeza. Relieve 3D de alta definición.',
       badge: 'Favorito 🦦',
       sales_count: 47
@@ -485,7 +524,7 @@ async function seedInitialProducts() {
       cost_price: 3500,
       stock: 15,
       min_stock: 4,
-      image: '/images/pins/avocado-pin.png',
+      image: '/images/pins/avocado-pin.webp',
       description: 'Palta / aguacate maduro y simpático usando lentes de sol oscuros. Estilo y frescura en tu calzado.',
       badge: 'Tendencia 🥑',
       sales_count: 24
@@ -500,7 +539,7 @@ async function seedInitialProducts() {
       cost_price: 3200,
       stock: 20,
       min_stock: 5,
-      image: '/images/pins/flower-pin.png',
+      image: '/images/pins/flower-pin.webp',
       description: 'Margarita blanca y amarilla con carita alegre estilo Murakami. Llena de vida y buena vibra.',
       badge: 'Clásico 🌼',
       sales_count: 29
@@ -515,7 +554,7 @@ async function seedInitialProducts() {
       cost_price: 4000,
       stock: 7,
       min_stock: 3,
-      image: '/images/pins/futbol-pin.png',
+      image: '/images/pins/futbol-pin.webp',
       description: 'Pelota de fútbol clásica con estrellas doradas. Indispensable para los fanáticos del deporte rey.',
       badge: 'Fútbol ⚽',
       sales_count: 22
@@ -530,7 +569,7 @@ async function seedInitialProducts() {
       cost_price: 4000,
       stock: 6,
       min_stock: 3,
-      image: '/images/pins/gamer-pin.png',
+      image: '/images/pins/gamer-pin.webp',
       description: 'Mando retro de videojuegos con cruceta y botones de colores. El preferido de los streamers y gamers.',
       badge: 'Gamer 🎮',
       sales_count: 26
@@ -545,7 +584,7 @@ async function seedInitialProducts() {
       cost_price: 3500,
       stock: 9,
       min_stock: 3,
-      image: '/images/pins/pizza-pin.png',
+      image: '/images/pins/pizza-pin.webp',
       description: 'Porción de pizza con queso derretido y rodajas de pepperoni. Un clásico para personalizar con humor.',
       badge: 'Delicioso 🍕',
       sales_count: 18
@@ -560,7 +599,7 @@ async function seedInitialProducts() {
       cost_price: 3500,
       stock: 8,
       min_stock: 3,
-      image: '/images/pins/boba-pin.png',
+      image: '/images/pins/boba-pin.webp',
       description: 'Vaso de té de perlas con pajita y carita tierna. Súper popular entre los amantes del bubble tea.',
       badge: 'Kawaii 🧋',
       sales_count: 16
@@ -575,7 +614,7 @@ async function seedInitialProducts() {
       cost_price: 5000,
       stock: 2,
       min_stock: 3,
-      image: '/images/pins/heart-glitter-pin.png',
+      image: '/images/pins/heart-glitter-pin.webp',
       description: 'Acabado brillante con microglitter holográfico dorado y resina espejada. Toque de elegancia y brillo.',
       badge: '¡Últimas 2! ⚡',
       sales_count: 27
@@ -590,7 +629,7 @@ async function seedInitialProducts() {
       cost_price: 4000,
       stock: 0,
       min_stock: 3,
-      image: '/images/pins/dino-pin.png',
+      image: '/images/pins/dino-pin.webp',
       description: 'Dinosaurio verde simpático en goma suave. Reposición de stock en camino.',
       badge: 'Agotado',
       sales_count: 35
@@ -605,7 +644,7 @@ async function seedInitialProducts() {
       cost_price: 18000,
       stock: 5,
       min_stock: 2,
-      image: '/images/pins/estetoscopio-pin.png',
+      image: '/images/pins/estetoscopio-pin.webp',
       description: 'Kit completo para personal de salud: Estetoscopio, Corazón, Curita, Cápsula y Dije Médico. Llevá 5 por solo Gs. 45.000.',
       badge: 'Pack 5x 🩺',
       sales_count: 19
@@ -620,7 +659,7 @@ async function seedInitialProducts() {
       cost_price: 15000,
       stock: 6,
       min_stock: 2,
-      image: '/images/pins/crocs-jibbitz-charms-pins-1.jpg',
+      image: '/images/pins/crocs-jibbitz-charms-pins-1.webp',
       description: 'Combiná iniciales, letras en relieve y dijes positivos para personalizar tu Crocs con tu nombre.',
       badge: 'Armá tu Nombre 🔤',
       sales_count: 14
@@ -636,7 +675,7 @@ async function seedInitialProducts() {
       cost_price: 20000,
       stock: 4,
       min_stock: 2,
-      image: '/images/pins/crocs-jibbitz-charm-stitch-mickey-avenge-2.jpg',
+      image: '/images/pins/crocs-jibbitz-charm-stitch-mickey-avenge-2.webp',
       description: 'Pack con 5 pins de personajes favoritos estilo animación clásica.',
       badge: 'Pack 5 Charms 🎁',
       sales_count: 23
@@ -653,7 +692,7 @@ async function seedInitialProducts() {
       cost_price: 6000,
       stock: 15,
       min_stock: 4,
-      image: '/images/pins/steth-charm-ekg.png',
+      image: '/images/pins/steth-charm-ekg.webp',
       description: 'Dije clip metálico en oro rosa con esmalte de corazón y pulso EKG. Se abraza con seguridad al tubo de cualquier estetoscopio estándar (Littmann, MDF, etc.) sin rayarlo.',
       badge: 'Top Esteto 🩺',
       sales_count: 36
@@ -669,7 +708,7 @@ async function seedInitialProducts() {
       cost_price: 6000,
       stock: 12,
       min_stock: 3,
-      image: '/images/pins/steth-charm-tooth.png',
+      image: '/images/pins/steth-charm-tooth.webp',
       description: 'Diente molar sonriente con cofia rosa en resina esmaltada de alta definición. El accesorio clínico ideal para odontólogos, cirujanos dentales y estudiantes.',
       badge: 'Odontología 🦷',
       sales_count: 28
@@ -685,7 +724,7 @@ async function seedInitialProducts() {
       cost_price: 6000,
       stock: 14,
       min_stock: 4,
-      image: '/images/pins/steth-charm-paw.png',
+      image: '/images/pins/steth-charm-paw.webp',
       description: 'Huella de mascota en oro rosa y verde menta pastel. Broche posterior que no resbala en la goma del tubo. El preferido de veterinarios.',
       badge: 'Veterinaria 🐾',
       sales_count: 33
@@ -701,7 +740,7 @@ async function seedInitialProducts() {
       cost_price: 9500,
       stock: 8,
       min_stock: 3,
-      image: '/images/pins/steth-charm-duo.png',
+      image: '/images/pins/steth-charm-duo.webp',
       description: '¡El combo definitivo! Incluye 1 clip para tubo de estetoscopio + 1 pin para tus calzados Crocs con diseño clínico a juego. Llevá ambos y combiná tu guardia médica.',
       badge: 'Combo 2 en 1 🎁',
       sales_count: 42
@@ -717,7 +756,7 @@ async function seedInitialProducts() {
       cost_price: 6000,
       stock: 10,
       min_stock: 3,
-      image: '/images/pins/heart-glitter-pin.png',
+      image: '/images/pins/heart-glitter-pin.webp',
       description: 'Corazón brillante con microglitter holográfico dorado y montura especial para tubuladura de estetoscopio.',
       badge: 'Glitter Lux ✨',
       sales_count: 25
@@ -733,7 +772,7 @@ async function seedInitialProducts() {
       cost_price: 6000,
       stock: 16,
       min_stock: 4,
-      image: '/images/pins/estetoscopio-pin.png',
+      image: '/images/pins/estetoscopio-pin.webp',
       description: 'Dije en relieve 3D de alta definición que se abraza al estetoscopio para personalizar tu herramienta de trabajo diaria.',
       badge: 'Top Ventas 🩺',
       sales_count: 49
@@ -1341,7 +1380,7 @@ async function getAllOrdersAdmin() {
         price: it.price,
         quantity: it.quantity,
         lineTotal: it.line_total,
-        image: prod ? prod.image : '/images/pins/estetoscopio-pin.png'
+        image: prod ? prod.image : '/images/pins/estetoscopio-pin.webp'
       });
     }
 

@@ -1,3 +1,5 @@
+> **Histórico:** este changelog foi supersedido por `CHANGELOG_MB05.md` e `ESTADO_PROJETO.md`.
+
 # PINPOP — Macrobloco 04
 
 ## Escopo consolidado

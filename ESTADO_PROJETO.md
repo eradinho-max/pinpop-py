@@ -1,45 +1,54 @@
 # PINPOP — Estado del proyecto
 
-## Macrobloco actual: Admin + imágenes + seguridad + SEO/IA
+## Release actual: v2.1.0
 
-### Implementado
+### Macroblocos concluidos
 
-- Backend como única fuente de verdad.
-- Netlify Functions para Express.
-- PostgreSQL/Supabase preparado para persistencia serverless.
-- WhatsApp comercial normalizado a **+595 991 950 031**.
-- Catálogo, carrito y checkout por WhatsApp.
-- Pedidos y estados: pendiente → confirmado → entregado / cancelado.
-- Stock transaccional con movimientos y estorno.
-- Admin de productos: crear, editar, activar/desactivar, precio, descripción, SKU, stock mínimo, promo y destaque.
-- Stock editable únicamente por flujo de inventario después de creado el producto.
-- Captura directa por cámara en mobile.
-- Compresión a WebP/JPEG y upload persistente.
-- Foto principal + hasta 4 fotos adicionales por producto.
-- Elegir una foto de galería como principal.
-- Sustitución/eliminación con limpieza de uploads nuevos no utilizados.
-- Categorías: crear, editar, desactivar y reactivar.
-- Validación real de imágenes por magic bytes.
-- JWT, bcrypt, Helmet/CSP, CORS, rate limits y no-cache de APIs.
-- SEO: canonical, sitemap, páginas individuales de producto, Product JSON-LD.
-- Descubrimiento IA: OAI-SearchBot permitido, GPTBot bloqueado, `llms.txt` complementario.
-- Scripts `check:syntax` y `check:security`.
+1. Backend como única fuente de verdad.
+2. Netlify Functions + PostgreSQL/Supabase.
+3. Admin de productos, imágenes, categorías y stock.
+4. Seguridad, SEO y descubrimiento por IA.
+5. Producción/performance + validación integral de release.
 
-### Para Netlify
+### Funcionalidades consolidadas
 
-Configurar: `DATABASE_URL`, `JWT_SECRET`, `ADMIN_PASSWORD`, `SITE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET`.
+- Catálogo público responsive para pins de Crocs y charms de estetoscopio.
+- Carrinho, pedido registrado no backend e abertura do WhatsApp **+595 991 950 031**.
+- Estados de pedido: pendiente → confirmado → entregado / cancelado.
+- Stock transaccional con movimientos, ajustes y estorno.
+- Admin para crear/editar/activar/desactivar productos.
+- Captura directa por cámara no celular.
+- Foto principal + até 4 imagens adicionais.
+- Upload persistente via Supabase Storage.
+- Categorias editáveis.
+- Soft delete.
+- JWT, bcrypt, CSP, CORS, Helmet y rate limits.
+- Validación binaria de uploads por magic bytes.
+- Sitemap, robots, páginas de producto, Product JSON-LD y llms.txt.
+- OAI-SearchBot permitido; GPTBot separado/bloqueado.
+- Fallback público somente de leitura se a Function/banco falhar; Admin/pedidos/estoque nunca usam fallback local.
+
+### Performance aplicada
+
+- Tailwind deixou de rodar via CDN/browser runtime: CSS está pré-compilado em `public/tailwind-built.css`.
+- Ícones deixaram de depender de CDN externo: renderer local em `public/vendor/icons.js`.
+- Imagens locais do catálogo/simulador convertidas para WebP.
+- Peso aproximado de `public/images` reduzido de ~25 MB para ~3 MB.
+- Migração automática converte URLs locais antigas `.png/.jpg` de produtos já existentes para os novos `.webp`.
+- Cache estático configurado no Netlify para CSS, JS, imagens e dados fallback.
 
 ### Validação desta build
 
-- Sintaxe Node/JS: validada.
-- Scanner estático de segurança: 21/21 controles aprovados.
-- Upload falso com MIME JPEG e conteúdo não-imagem: rejeitado em teste unitário local.
-- Instalação npm/runtime completo: não concluído neste ambiente por indisponibilidade de rede; não afirmar teste end-to-end local.
+- `npm run check:syntax`: aprovado.
+- `npm run check:security`: **21/21** controles aprovados.
+- `npm run check:release`: **21/21** controles aprovados.
+- Smoke test HTTP estático: home, CSS compilado, ícones locais e catálogo fallback retornaram HTTP 200.
+- Não foi executado browser end-to-end real nem conexão contra um Supabase/Netlify externo neste ambiente. Essa validação deve ser feita no domínio publicado após o deploy.
 
-### Pendência não bloqueadora
+### Variáveis necessárias no Netlify
 
-- Tailwind Browser CDN e Lucide ainda são dependências JavaScript externas. A próxima etapa de performance pode localizá-las/compilar CSS quando for possível instalar ou baixar dependências de forma verificável.
+`DATABASE_URL`, `JWT_SECRET`, `ADMIN_PASSWORD`, `SITE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET`.
 
-## Hotfix posterior ao MB04
+### Macroblocos planejados restantes
 
-O catálogo público foi tornado resiliente a falhas da Function/banco no Netlify. A vitrine possui fallback somente de leitura, mas Admin, estoque e pedidos continuam obrigatoriamente vinculados ao backend persistente. Consulte `HOTFIX_NETLIFY_CATALOGO.md`.
+**0.** O roadmap funcional definido nesta conversa está concluído. A partir daqui, somente correções derivadas do deploy real ou novas funcionalidades solicitadas.

@@ -7,6 +7,7 @@
   // --- STATE ---
   let products = [];
   let catalogLoadFailed = false;
+  let backendAvailable = true;
   let categories = [];
   let adminCategories = [];
   let productFormGalleryImages = [];
@@ -176,49 +177,64 @@
   // --- API DATA FETCHING (BACKEND COMO ÚNICA FUENTE DE VERDAD) ---
   async function loadSettings() {
     try {
-      const res = await fetch('/api/settings');
-      if (!res.ok) throw new Error('No se pudo cargar la configuración de la tienda.');
-      if (!res.headers.get('content-type')?.includes('application/json')) {
+      const res = await fetch('/api/settings', { cache: 'no-store' });
+      if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) {
         throw new Error('Respuesta inválida del servidor.');
       }
       settings = await res.json();
-      applySettingsToUI();
     } catch (err) {
-      console.error('Error cargando configuración:', err);
-      settings = {};
-      showToast('No se pudo cargar la configuración. Verificá la conexión con el servidor.', 'error');
+      console.error('API settings no disponible, usando configuración pública de respaldo:', err);
+      try {
+        const fallbackRes = await fetch('/data/settings-fallback.json', { cache: 'no-store' });
+        settings = fallbackRes.ok ? await fallbackRes.json() : {};
+      } catch (_) {
+        settings = {};
+      }
     }
+    applySettingsToUI();
   }
 
   async function loadCategories() {
     try {
-      const res = await fetch('/api/categories');
-      if (!res.ok) throw new Error('No se pudieron cargar las categorías.');
-      if (!res.headers.get('content-type')?.includes('application/json')) {
+      const res = await fetch('/api/categories', { cache: 'no-store' });
+      if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) {
         throw new Error('Respuesta inválida del servidor.');
       }
       categories = await res.json();
     } catch (err) {
-      console.error('Error cargando categorías:', err);
-      categories = [];
-      showToast('No se pudieron cargar las categorías.', 'error');
+      console.error('API categories no disponible, usando respaldo público:', err);
+      try {
+        const fallbackRes = await fetch('/data/categories-fallback.json', { cache: 'no-store' });
+        categories = fallbackRes.ok ? await fallbackRes.json() : [];
+      } catch (_) {
+        categories = [];
+      }
     }
   }
 
   async function loadProducts() {
     try {
-      const res = await fetch('/api/products');
-      if (!res.ok) throw new Error('No se pudo cargar el catálogo.');
-      if (!res.headers.get('content-type')?.includes('application/json')) {
+      const res = await fetch('/api/products', { cache: 'no-store' });
+      if (!res.ok || !res.headers.get('content-type')?.includes('application/json')) {
         throw new Error('Respuesta inválida del servidor.');
       }
       products = await res.json();
       catalogLoadFailed = false;
+      backendAvailable = res.headers.get('X-PINPOP-Degraded') !== '1' && res.headers.get('X-PINPOP-Orders-Ready') !== '0';
     } catch (err) {
-      console.error('Error cargando catálogo:', err);
-      products = [];
-      catalogLoadFailed = true;
-      showToast('No se pudo cargar el catálogo. Intentá nuevamente.', 'error');
+      console.error('API catálogo no disponible, usando respaldo público de solo lectura:', err);
+      backendAvailable = false;
+      try {
+        const fallbackRes = await fetch('/data/catalog-fallback.json', { cache: 'no-store' });
+        if (!fallbackRes.ok) throw new Error('El catálogo de respaldo tampoco respondió.');
+        products = await fallbackRes.json();
+        catalogLoadFailed = false;
+      } catch (fallbackErr) {
+        console.error('Error cargando catálogo de respaldo:', fallbackErr);
+        products = [];
+        catalogLoadFailed = true;
+        showToast('No se pudo cargar el catálogo. Intentá nuevamente.', 'error');
+      }
     }
     updateTargetTabsCounts();
   }
@@ -1017,6 +1033,11 @@
 
     if (!name || !phone) {
       showToast('Por favor completá tu nombre y celular.', 'warning');
+      return;
+    }
+
+    if (!backendAvailable) {
+      showToast('El catálogo está visible, pero los pedidos están temporalmente fuera de servicio. Intentá nuevamente en unos minutos.', 'warning');
       return;
     }
 

@@ -10,6 +10,7 @@ const crypto = require('crypto');
 
 const db = require('./database');
 const imageStorage = require('./storage');
+const fallbackData = require('./fallback-data');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -191,12 +192,18 @@ async function cleanupRemovedManagedImages(oldProduct, newProduct) {
 // ==========================================
 // JWT AUTHENTICATION MIDDLEWARE
 // ==========================================
-function authenticateAdmin(req, res, next) {
+async function authenticateAdmin(req, res, next) {
   if (isNetlifyRuntime && !process.env.DATABASE_URL) {
     return res.status(503).json({ error: 'Admin deshabilitado en Netlify hasta configurar DATABASE_URL.' });
   }
   if (!adminSecurityReady) {
     return res.status(503).json({ error: 'Administración no configurada de forma segura en el servidor.' });
+  }
+  try {
+    await ensureDatabaseReady();
+  } catch (err) {
+    console.error('PINPOP database unavailable for admin:', err.message);
+    return res.status(503).json({ error: 'Base de datos no disponible temporalmente.' });
   }
 
   const authHeader = req.headers.authorization;
@@ -222,34 +229,62 @@ function authenticateAdmin(req, res, next) {
 // ==========================================
 
 
-// Health check for deployment diagnostics
+// Health check for deployment diagnostics. It must stay available even if the database is down.
 app.get('/api/health', async (req, res) => {
-  res.json({
+  let databaseHealthy = false;
+  let databaseError = null;
+  try {
+    await ensureDatabaseReady();
+    databaseHealthy = true;
+  } catch (err) {
+    databaseError = err && err.message ? err.message : 'Database initialization failed';
+  }
+  res.status(200).json({
     ok: true,
     runtime: isNetlifyRuntime ? 'netlify' : 'node',
-    database: process.env.DATABASE_URL ? 'postgres' : 'sqlite-readonly',
-    adminConfigured: adminSecurityReady
+    database: process.env.DATABASE_URL ? 'postgres' : (isNetlifyRuntime ? 'fallback-public' : 'sqlite'),
+    databaseHealthy,
+    publicCatalogSource: databaseHealthy ? 'database' : 'bundled-readonly-fallback',
+    adminConfigured: adminSecurityReady && databaseHealthy && (!isNetlifyRuntime || Boolean(process.env.DATABASE_URL)),
+    databaseError: databaseHealthy ? null : databaseError
   });
 });
 
-// Get public catalog
-app.get('/api/products', async (req, res) => {
+async function publicDataOrFallback(dbGetter, fallbackValue, res, label) {
   try {
-    const products = await db.getPublicProducts();
-    res.json(products);
+    await ensureDatabaseReady();
+    const value = await dbGetter();
+    res.setHeader('X-PINPOP-Data-Source', 'database');
+    return value;
   } catch (err) {
-    res.status(500).json({ error: 'Error al consultar productos: ' + err.message });
+    console.error(`PINPOP ${label} database fallback:`, err.message);
+    res.setHeader('X-PINPOP-Data-Source', 'bundled-readonly-fallback');
+    res.setHeader('X-PINPOP-Degraded', '1');
+    return typeof fallbackValue === 'function' ? fallbackValue() : fallbackValue;
   }
+}
+
+// Public browsing remains available during a database outage.
+// Writes, Admin and order creation remain fail-closed.
+app.get('/api/products', async (req, res) => {
+  res.setHeader('X-PINPOP-Orders-Ready', (!isNetlifyRuntime || Boolean(process.env.DATABASE_URL)) ? '1' : '0');
+  const products = await publicDataOrFallback(
+    () => db.getPublicProducts(),
+    fallbackData.products,
+    res,
+    'catalog'
+  );
+  res.json(products);
 });
 
-// Get store settings
 app.get('/api/settings', async (req, res) => {
-  try {
-    const settings = await db.getPublicSettings();
-    res.json(settings);
-  } catch (err) {
-    res.status(500).json({ error: 'Error al consultar configuración: ' + err.message });
-  }
+  const settings = await publicDataOrFallback(
+    () => db.getPublicSettings(),
+    fallbackData.settings,
+    res,
+    'settings'
+  );
+  res.json(settings);
 });
 
 // SEO / AI discovery endpoints. These expose only public catalog information.
@@ -274,7 +309,7 @@ app.get('/robots.txt', async (req, res) => {
 app.get('/sitemap.xml', async (req, res) => {
   try {
     const baseUrl = getSiteBaseUrl(req);
-    const products = await db.getSeoProducts();
+    const products = await publicDataOrFallback(() => db.getSeoProducts(), () => fallbackData.getSeoProducts(), res, 'sitemap');
     const urls = [
       `<url><loc>${baseUrl}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>`,
       ...products.map(p => `<url><loc>${baseUrl}/producto/${encodeURIComponent(p.id)}</loc>${p.updatedAt ? `<lastmod>${new Date(p.updatedAt).toISOString()}</lastmod>` : ''}<changefreq>weekly</changefreq><priority>0.8</priority></url>`)
@@ -288,7 +323,7 @@ app.get('/sitemap.xml', async (req, res) => {
 app.get('/llms.txt', async (req, res) => {
   const baseUrl = getSiteBaseUrl(req);
   let products = [];
-  try { products = (await db.getSeoProducts()).slice(0, 50); } catch (_) {}
+  try { products = (await publicDataOrFallback(() => db.getSeoProducts(), () => fallbackData.getSeoProducts(), res, 'llms')).slice(0, 50); } catch (_) { products = fallbackData.getSeoProducts().slice(0, 50); }
   const lines = [
     '# PINPOP',
     '',
@@ -309,10 +344,10 @@ app.get('/llms.txt', async (req, res) => {
 
 app.get('/producto/:id', async (req, res) => {
   try {
-    const product = await db.getPublicProductById(req.params.id);
+    const product = await publicDataOrFallback(() => db.getPublicProductById(req.params.id), () => fallbackData.getProductById(req.params.id), res, 'product-page');
     if (!product) return res.status(404).type('html').send('<!doctype html><html lang="es"><meta charset="utf-8"><title>Producto no encontrado | PINPOP</title><body><p>Producto no encontrado.</p><a href="/">Volver a PINPOP</a></body></html>');
 
-    const settings = await db.getPublicSettings();
+    const settings = await publicDataOrFallback(() => db.getPublicSettings(), fallbackData.settings, res, 'product-settings');
     const baseUrl = getSiteBaseUrl(req);
     const canonical = `${baseUrl}/producto/${encodeURIComponent(product.id)}`;
     const productImage = absoluteAssetUrl(baseUrl, product.image);
@@ -388,6 +423,13 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     return res.status(503).json({ error: 'Administración no configurada de forma segura. JWT_SECRET ≥32 y ADMIN_PASSWORD ≥12.' });
   }
 
+  try {
+    await ensureDatabaseReady();
+  } catch (err) {
+    console.error('PINPOP login database error:', err.message);
+    return res.status(503).json({ error: 'Base de datos no disponible temporalmente.' });
+  }
+
   const { password } = req.body;
   if (!password) {
     return res.status(400).json({ error: 'Contraseña requerida.' });
@@ -419,13 +461,19 @@ app.get('/api/auth/verify', authenticateAdmin, (req, res) => {
 // ==========================================
 // PERSISTENCE GUARD
 // ==========================================
-function requirePersistentDatabase(req, res, next) {
+async function requirePersistentDatabase(req, res, next) {
   if (process.env.NETLIFY === 'true' && !process.env.DATABASE_URL) {
     return res.status(503).json({
       error: 'Base persistente no configurada. En Netlify, defina DATABASE_URL antes de modificar catálogo, stock o pedidos.'
     });
   }
-  return next();
+  try {
+    await ensureDatabaseReady();
+    return next();
+  } catch (err) {
+    console.error('PINPOP persistent database error:', err.message);
+    return res.status(503).json({ error: 'Base de datos persistente no disponible temporalmente.' });
+  }
 }
 
 // ==========================================
@@ -507,13 +555,17 @@ app.patch('/api/admin/products/:id/stock', authenticateAdmin, requirePersistentD
 // CATEGORIES API (Dynamic Management)
 // ==========================================
 app.get('/api/categories', async (req, res) => {
-  try {
-    const targetType = req.query.targetType || null;
-    const cats = await db.getCategories(targetType);
-    res.json(cats);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  const targetType = req.query.targetType || null;
+  const fallbackCategories = targetType
+    ? fallbackData.categories.filter(c => (c.targetType || c.target_type || 'crocs') === targetType)
+    : fallbackData.categories;
+  const cats = await publicDataOrFallback(
+    () => db.getCategories(targetType),
+    fallbackCategories,
+    res,
+    'categories'
+  );
+  res.json(cats);
 });
 
 app.get('/api/admin/categories', authenticateAdmin, async (req, res) => {

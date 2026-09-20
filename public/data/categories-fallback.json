@@ -1,0 +1,121 @@
+[
+  {
+    "id": "fallback-cat-1",
+    "name": "Personajes",
+    "target_type": "crocs",
+    "targetType": "crocs",
+    "active": true
+  },
+  {
+    "id": "fallback-cat-2",
+    "name": "Medicina",
+    "target_type": "crocs",
+    "targetType": "crocs",
+    "active": true
+  },
+  {
+    "id": "fallback-cat-3",
+    "name": "Animales",
+    "target_type": "crocs",
+    "targetType": "crocs",
+    "active": true
+  },
+  {
+    "id": "fallback-cat-4",
+    "name": "Flores",
+    "target_type": "crocs",
+    "targetType": "crocs",
+    "active": true
+  },
+  {
+    "id": "fallback-cat-5",
+    "name": "Letras",
+    "target_type": "crocs",
+    "targetType": "crocs",
+    "active": true
+  },
+  {
+    "id": "fallback-cat-6",
+    "name": "Deportes",
+    "target_type": "crocs",
+    "targetType": "crocs",
+    "active": true
+  },
+  {
+    "id": "fallback-cat-7",
+    "name": "Comida",
+    "target_type": "crocs",
+    "targetType": "crocs",
+    "active": true
+  },
+  {
+    "id": "fallback-cat-8",
+    "name": "Viajes",
+    "target_type": "crocs",
+    "targetType": "crocs",
+    "active": true
+  },
+  {
+    "id": "fallback-cat-9",
+    "name": "Packs",
+    "target_type": "crocs",
+    "targetType": "crocs",
+    "active": true
+  },
+  {
+    "id": "fallback-cat-10",
+    "name": "Ofertas",
+    "target_type": "crocs",
+    "targetType": "crocs",
+    "active": true
+  },
+  {
+    "id": "fallback-cat-11",
+    "name": "Especiales",
+    "target_type": "crocs",
+    "targetType": "crocs",
+    "active": true
+  },
+  {
+    "id": "fallback-cat-12",
+    "name": "Otros",
+    "target_type": "crocs",
+    "targetType": "crocs",
+    "active": true
+  },
+  {
+    "id": "fallback-cat-13",
+    "name": "Cardiología",
+    "target_type": "estetoscopio",
+    "targetType": "estetoscopio",
+    "active": true
+  },
+  {
+    "id": "fallback-cat-14",
+    "name": "Odontología",
+    "target_type": "estetoscopio",
+    "targetType": "estetoscopio",
+    "active": true
+  },
+  {
+    "id": "fallback-cat-15",
+    "name": "Veterinaria",
+    "target_type": "estetoscopio",
+    "targetType": "estetoscopio",
+    "active": true
+  },
+  {
+    "id": "fallback-cat-16",
+    "name": "Packs Médicos",
+    "target_type": "estetoscopio",
+    "targetType": "estetoscopio",
+    "active": true
+  },
+  {
+    "id": "fallback-cat-17",
+    "name": "Ofertas",
+    "target_type": "estetoscopio",
+    "targetType": "estetoscopio",
+    "active": true
+  }
+]

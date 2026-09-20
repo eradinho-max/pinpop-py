@@ -39,3 +39,7 @@ Configurar: `DATABASE_URL`, `JWT_SECRET`, `ADMIN_PASSWORD`, `SITE_URL`, `SUPABAS
 ### Pendência não bloqueadora
 
 - Tailwind Browser CDN e Lucide ainda são dependências JavaScript externas. A próxima etapa de performance pode localizá-las/compilar CSS quando for possível instalar ou baixar dependências de forma verificável.
+
+## Hotfix posterior ao MB04
+
+O catálogo público foi tornado resiliente a falhas da Function/banco no Netlify. A vitrine possui fallback somente de leitura, mas Admin, estoque e pedidos continuam obrigatoriamente vinculados ao backend persistente. Consulte `HOTFIX_NETLIFY_CATALOGO.md`.

@@ -59,3 +59,11 @@ Observação: a revisão de segurança deste macrobloco é uma verificação de 
 ## Risco residual conhecido
 
 Tailwind Browser CDN e Lucide continuam externos. O Tailwind Browser/Play CDN é adequado para desenvolvimento, mas a versão final de performance deve compilar CSS e servir assets localmente. A migração não foi simulada sem instalação/download verificável das dependências neste ambiente.
+
+## Hotfix Netlify — catálogo público resiliente
+
+- Removido boot obrigatório do banco antes de toda requisição da Netlify Function.
+- Adicionado fallback público somente de leitura no servidor.
+- Adicionado fallback estático em `public/data/` para indisponibilidade total da Function.
+- `/api/health` agora informa estado degradado sem cair em HTTP 500.
+- Admin, pedidos e estoque permanecem dependentes de banco persistente e não usam fallback.

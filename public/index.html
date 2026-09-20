@@ -29,7 +29,7 @@
 
   <!-- CSS e íconos locales: sin dependencias CDN en el camino crítico. -->
   <link rel="stylesheet" href="tailwind-built.css?v=2.2.2">
-  <link rel="stylesheet" href="style.css?v=2.2.2">
+  <link rel="stylesheet" href="style.css?v=2.3.2">
   <script src="vendor/icons.js?v=2.2.2"></script>
 </head>
 <body class="bg-[#F4F5F7] text-[#111111] font-sans min-h-screen flex flex-col antialiased selection:bg-[#FF2D8A] selection:text-white">
@@ -764,11 +764,16 @@
             <p class="text-xs font-bold text-slate-800">Primer acceso: activá la verificación en dos pasos</p>
             <img id="admin2faQrImage" alt="QR Code para configurar autenticador" class="hidden w-52 h-52 mx-auto bg-white rounded-xl border border-slate-200 p-2" />
             <div>
-              <p class="text-[10px] text-slate-500 mb-1">Escaneá el QR con Google Authenticator o Microsoft Authenticator.</p>
+              <p class="text-[11px] font-black text-slate-800 mb-1">1. Escaneá el QR con Google Authenticator o Microsoft Authenticator.</p>
+              <p class="text-[10px] text-slate-500 mb-2">El escaneo solo agrega PINPOP al autenticador. <strong>No entra al panel automáticamente.</strong></p>
               <p class="text-[10px] text-slate-500">Si no podés escanear, usá esta clave:</p>
               <code id="admin2faManualKey" class="block mt-1 px-2 py-2 rounded-lg bg-white border border-slate-200 text-[11px] font-bold tracking-wider break-all text-slate-800"></code>
               <a id="admin2faOpenLink" class="hidden inline-block mt-2 text-[11px] font-black text-[#FF2D8A] underline underline-offset-2" href="#">Abrir en el autenticador</a>
             </div>
+          </div>
+          <div class="rounded-xl border border-[#FF2D8A]/25 bg-[#FFF1F7] px-3 py-2 text-center">
+            <p class="text-[11px] font-black text-[#111111]">2. Mirá el código de 6 dígitos que aparece en tu autenticador</p>
+            <p class="text-[10px] text-slate-500 mt-0.5">Ingresalo abajo. Al completar los 6 números, PINPOP lo confirmará automáticamente.</p>
           </div>
           <input
             type="text"
@@ -781,8 +786,9 @@
             class="w-full px-3.5 py-2.5 text-xs tracking-[0.3em] text-center font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25 focus:border-[#FF2D8A]"
           />
           <button id="admin2faConfirmBtn" type="button" class="btn-pinpop-primary w-full py-2.5 font-black text-xs rounded-xl shadow">
-            Confirmar y entrar
+            Confirmar código y entrar
           </button>
+          <p id="admin2faSetupStatus" class="text-center text-[10px] text-slate-500 min-h-[14px]" aria-live="polite"></p>
           <button id="admin2faRestartBtn" type="button" class="w-full py-2 text-[11px] font-bold text-slate-500 hover:text-slate-800">
             Volver a empezar
           </button>
@@ -1608,6 +1614,6 @@
   </footer>
 
   <!-- Application Logic -->
-  <script src="app.js?v=2.2.2"></script>
+  <script src="app.js?v=2.3.2"></script>
 </body>
 </html>

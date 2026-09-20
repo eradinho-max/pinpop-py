@@ -2,7 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs');
 const multer = require('multer');
 const jwt = require('jsonwebtoken');
 const helmet = require('helmet');
@@ -10,6 +9,7 @@ const rateLimit = require('express-rate-limit');
 const crypto = require('crypto');
 
 const db = require('./database');
+const imageStorage = require('./storage');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -23,7 +23,8 @@ app.set('trust proxy', 1);
 // ==========================================
 let JWT_SECRET = process.env.JWT_SECRET || null;
 const isProduction = process.env.NODE_ENV === 'production' || process.env.NETLIFY === 'true';
-const adminSecurityReady = Boolean(JWT_SECRET && process.env.ADMIN_PASSWORD);
+const configuredAdminPassword = process.env.ADMIN_PASSWORD || '';
+let adminSecurityReady = Boolean(JWT_SECRET && JWT_SECRET.length >= 32 && configuredAdminPassword.length >= 12);
 
 if (!JWT_SECRET && !isProduction) {
   JWT_SECRET = crypto.randomBytes(32).toString('hex');
@@ -31,7 +32,7 @@ if (!JWT_SECRET && !isProduction) {
 }
 
 if (isProduction && !adminSecurityReady) {
-  console.warn('⚠️ PINPOP: Admin deshabilitado hasta configurar JWT_SECRET y ADMIN_PASSWORD en el entorno.');
+  console.warn('⚠️ PINPOP: Admin deshabilitado. En producción, JWT_SECRET debe tener ≥32 caracteres y ADMIN_PASSWORD ≥12 caracteres.');
 }
 
 // ==========================================
@@ -41,100 +42,151 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.tailwindcss.com", "https://unpkg.com"],
+      scriptSrc: ["'self'", "https://cdn.tailwindcss.com", "https://unpkg.com"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
-      imgSrc: ["'self'", "data:", "blob:", "https://*"],
-      connectSrc: ["'self'"]
+      imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co", "https://*.supabase.in"],
+      connectSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      frameAncestors: ["'none'"],
+      formAction: ["'self'"],
+      scriptSrcAttr: ["'none'"]
     }
   },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   crossOriginEmbedderPolicy: false
 }));
 
-// ==========================================
-// CORS CONFIGURATION (Same-origin default / Whitelist)
-// ==========================================
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim())
-  : null;
+app.use((req, res, next) => {
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=(), payment=()');
+  next();
+});
 
-app.use(cors({
-  origin: (origin, callback) => {
-    // Permit requests without origin (same-origin, curl, mobile apps)
-    if (!origin) return callback(null, true);
-    if (!allowedOrigins || allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    return callback(new Error('Bloqueado por política de seguridad CORS'));
-  },
-  credentials: true
+// ==========================================
+// CORS CONFIGURATION (same-origin by default + explicit whitelist)
+// ==========================================
+const configuredOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+app.use(cors((req, callback) => {
+  const origin = req.get('Origin');
+  if (!origin) return callback(null, { origin: true, credentials: true });
+
+  const forwardedProto = req.get('x-forwarded-proto') || req.protocol || 'https';
+  const host = req.get('host');
+  const sameOrigin = host ? `${forwardedProto}://${host}` : null;
+  const platformOrigins = [process.env.URL, process.env.DEPLOY_PRIME_URL, process.env.SITE_URL]
+    .filter(Boolean)
+    .map(v => String(v).replace(/\/$/, ''));
+  const allow = new Set([...configuredOrigins, ...platformOrigins, sameOrigin].filter(Boolean));
+
+  if (allow.has(origin.replace(/\/$/, ''))) {
+    return callback(null, { origin: true, credentials: true });
+  }
+  return callback(new Error('Bloqueado por política de seguridad CORS'));
 }));
 
 // Body parsing
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
+// API responses contain live stock/order/admin data and must not be cached by shared proxies.
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  next();
+});
+
 // Static files
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/images', express.static(path.join(__dirname, 'public/images')));
-
-// Ensure uploads folder exists only on traditional writable servers.
-// Netlify Functions use memory upload + persistent external Storage instead.
-const uploadsDir = path.join(__dirname, 'public/images/uploads');
-if (!isNetlifyRuntime && !fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
 
 // ==========================================
 // RATE LIMITING
 // ==========================================
 const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 failed attempts per IP
-  skipSuccessfulRequests: true, // Only count failed attempts towards the brute-force limit
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skipSuccessfulRequests: true,
   message: { error: 'Demasiados intentos de acceso fallidos. Por favor, intente nuevamente en 15 minutos.' },
   standardHeaders: true,
   legacyHeaders: false
 });
 
 const orderLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 15, // max 15 orders per IP per 15 minutes
+  windowMs: 15 * 60 * 1000,
+  max: 15,
   message: { error: 'Demasiados pedidos enviados recientemente. Por favor aguarde unos minutos.' },
   standardHeaders: true,
   legacyHeaders: false
 });
 
-// ==========================================
-// STRICT MULTER CONFIGURATION (MIME + 4MB Limit)
-// ==========================================
-const diskStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadsDir),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, 'pin-' + crypto.randomUUID() + ext);
-  }
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { error: 'Demasiadas cargas de imágenes. Aguarde unos minutos antes de continuar.' },
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
-const uploadStorage = isNetlifyRuntime ? multer.memoryStorage() : diskStorage;
-
-const fileFilter = (req, file, cb) => {
-  const allowedMimes = ['image/jpeg', 'image/png', 'image/webp'];
-  const ext = path.extname(file.originalname).toLowerCase();
-  const allowedExts = ['.jpg', '.jpeg', '.png', '.webp'];
-
-  if (allowedMimes.includes(file.mimetype) && allowedExts.includes(ext)) {
-    cb(null, true);
-  } else {
-    cb(new Error('Formato no permitido. Solo se aceptan imágenes JPG, PNG o WebP.'));
-  }
-};
-
+// Receive images in memory. Content is validated by magic bytes before Storage/local persistence.
 const upload = multer({
-  storage: uploadStorage,
-  limits: { fileSize: 4 * 1024 * 1024 },
-  fileFilter
+  storage: multer.memoryStorage(),
+  limits: { fileSize: imageStorage.MAX_UPLOAD_BYTES, files: 1 },
+  fileFilter: (req, file, cb) => {
+    if (imageStorage.ALLOWED_MIMES.includes(file.mimetype)) return cb(null, true);
+    return cb(new Error('Formato no permitido. Solo se aceptan imágenes JPG, PNG o WebP.'));
+  }
 });
+
+function escapeHtmlServer(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+function getSiteBaseUrl(req) {
+  const configured = process.env.SITE_URL || process.env.URL;
+  if (configured) return String(configured).replace(/\/$/, '');
+  const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
+  return `${proto}://${req.get('host')}`.replace(/\/$/, '');
+}
+
+function absoluteAssetUrl(baseUrl, assetUrl) {
+  if (!assetUrl) return `${baseUrl}/images/brand/pinpop-logo-web.png`;
+  if (/^https?:\/\//i.test(assetUrl)) return assetUrl;
+  return `${baseUrl}/${String(assetUrl).replace(/^\//, '')}`;
+}
+
+function parseGalleryImages(value) {
+  if (Array.isArray(value)) return value.filter(v => typeof v === 'string' && v.trim()).slice(0, 4);
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter(v => typeof v === 'string' && v.trim()).slice(0, 4) : [];
+    } catch (_) { return []; }
+  }
+  return [];
+}
+
+async function cleanupRemovedManagedImages(oldProduct, newProduct) {
+  if (!oldProduct || !newProduct) return;
+  const oldGallery = parseGalleryImages(oldProduct.gallery_images || oldProduct.galleryImages);
+  const newGallery = parseGalleryImages(newProduct.gallery_images || newProduct.galleryImages);
+  const oldUrls = [oldProduct.image, ...oldGallery].filter(Boolean);
+  const newUrls = new Set([newProduct.image || oldProduct.image, ...newGallery].filter(Boolean));
+  const removed = [...new Set(oldUrls.filter(url => !newUrls.has(url) && imageStorage.isManagedImageUrl(url)))];
+  for (const url of removed) {
+    try { await imageStorage.deleteImageByUrl(url); }
+    catch (err) { console.warn('PINPOP cleanup image warning:', err.message); }
+  }
+}
 
 // ==========================================
 // JWT AUTHENTICATION MIDDLEWARE
@@ -143,8 +195,8 @@ function authenticateAdmin(req, res, next) {
   if (isNetlifyRuntime && !process.env.DATABASE_URL) {
     return res.status(503).json({ error: 'Admin deshabilitado en Netlify hasta configurar DATABASE_URL.' });
   }
-  if (!JWT_SECRET || !process.env.ADMIN_PASSWORD) {
-    return res.status(503).json({ error: 'Administración no configurada en el servidor. Configure JWT_SECRET y ADMIN_PASSWORD.' });
+  if (!adminSecurityReady) {
+    return res.status(503).json({ error: 'Administración no configurada de forma segura en el servidor.' });
   }
 
   const authHeader = req.headers.authorization;
@@ -176,7 +228,7 @@ app.get('/api/health', async (req, res) => {
     ok: true,
     runtime: isNetlifyRuntime ? 'netlify' : 'node',
     database: process.env.DATABASE_URL ? 'postgres' : 'sqlite-readonly',
-    adminConfigured: Boolean(process.env.JWT_SECRET && process.env.ADMIN_PASSWORD)
+    adminConfigured: adminSecurityReady
   });
 });
 
@@ -200,6 +252,118 @@ app.get('/api/settings', async (req, res) => {
   }
 });
 
+// SEO / AI discovery endpoints. These expose only public catalog information.
+app.get('/robots.txt', async (req, res) => {
+  const baseUrl = getSiteBaseUrl(req);
+  res.type('text/plain').send([
+    'User-agent: *',
+    'Allow: /',
+    'Disallow: /api/admin/',
+    'Disallow: /api/auth/',
+    '',
+    'User-agent: OAI-SearchBot',
+    'Allow: /',
+    '',
+    'User-agent: GPTBot',
+    'Disallow: /',
+    '',
+    `Sitemap: ${baseUrl}/sitemap.xml`
+  ].join('\n'));
+});
+
+app.get('/sitemap.xml', async (req, res) => {
+  try {
+    const baseUrl = getSiteBaseUrl(req);
+    const products = await db.getSeoProducts();
+    const urls = [
+      `<url><loc>${baseUrl}/</loc><changefreq>daily</changefreq><priority>1.0</priority></url>`,
+      ...products.map(p => `<url><loc>${baseUrl}/producto/${encodeURIComponent(p.id)}</loc>${p.updatedAt ? `<lastmod>${new Date(p.updatedAt).toISOString()}</lastmod>` : ''}<changefreq>weekly</changefreq><priority>0.8</priority></url>`)
+    ];
+    res.type('application/xml').send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls.join('')}</urlset>`);
+  } catch (err) {
+    res.status(500).type('text/plain').send('No se pudo generar el sitemap.');
+  }
+});
+
+app.get('/llms.txt', async (req, res) => {
+  const baseUrl = getSiteBaseUrl(req);
+  let products = [];
+  try { products = (await db.getSeoProducts()).slice(0, 50); } catch (_) {}
+  const lines = [
+    '# PINPOP',
+    '',
+    '> Catálogo paraguayo de pins y charms compatibles con calzados tipo Crocs y accesorios decorativos para estetoscopios.',
+    '',
+    '- Idioma: español (Paraguay)',
+    '- Moneda: guaraní paraguayo (PYG)',
+    '- Cobertura: Asunción y Paraguay',
+    '- Compra: catálogo online, carrito y confirmación por WhatsApp',
+    '- WhatsApp: +595 991 950 031',
+    `- Sitio: ${baseUrl}/`,
+    '',
+    '## Productos públicos',
+    ...products.map(p => `- ${p.name}: ${baseUrl}/producto/${encodeURIComponent(p.id)}`)
+  ];
+  res.type('text/plain').send(lines.join('\n'));
+});
+
+app.get('/producto/:id', async (req, res) => {
+  try {
+    const product = await db.getPublicProductById(req.params.id);
+    if (!product) return res.status(404).type('html').send('<!doctype html><html lang="es"><meta charset="utf-8"><title>Producto no encontrado | PINPOP</title><body><p>Producto no encontrado.</p><a href="/">Volver a PINPOP</a></body></html>');
+
+    const settings = await db.getPublicSettings();
+    const baseUrl = getSiteBaseUrl(req);
+    const canonical = `${baseUrl}/producto/${encodeURIComponent(product.id)}`;
+    const productImage = absoluteAssetUrl(baseUrl, product.image);
+    const gallery = parseGalleryImages(product.galleryImages).map(url => absoluteAssetUrl(baseUrl, url));
+    const images = [...new Set([productImage, ...gallery])];
+    const effectivePrice = Number(product.promoPrice || product.price || 0);
+    const availability = Number(product.stock || 0) > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock';
+    const description = product.description || `Pin decorativo ${product.targetType === 'estetoscopio' ? 'para estetoscopio' : 'compatible con calzados tipo Crocs'}, disponible en Paraguay.`;
+    const jsonLd = {
+      '@context': 'https://schema.org/',
+      '@type': 'Product',
+      name: product.name,
+      image: images,
+      description,
+      sku: product.sku,
+      brand: { '@type': 'Brand', name: 'PINPOP' },
+      category: product.category,
+      offers: {
+        '@type': 'Offer',
+        url: canonical,
+        priceCurrency: 'PYG',
+        price: effectivePrice,
+        availability,
+        itemCondition: 'https://schema.org/NewCondition'
+      }
+    };
+    const safeJsonLd = JSON.stringify(jsonLd).replace(/</g, '\\u003c');
+    const whatsapp = String(settings.whatsappNumber || '595991950031').replace(/\D/g, '');
+    const openInCatalog = `/?producto=${encodeURIComponent(product.id)}`;
+    const html = `<!doctype html>
+<html lang="es-PY"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHtmlServer(product.name)} | PINPOP Paraguay</title>
+<meta name="description" content="${escapeHtmlServer(description).slice(0, 160)}">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<link rel="canonical" href="${escapeHtmlServer(canonical)}">
+<meta property="og:type" content="product"><meta property="og:site_name" content="PINPOP">
+<meta property="og:title" content="${escapeHtmlServer(product.name)} | PINPOP">
+<meta property="og:description" content="${escapeHtmlServer(description).slice(0, 200)}">
+<meta property="og:image" content="${escapeHtmlServer(productImage)}"><meta property="og:url" content="${escapeHtmlServer(canonical)}">
+<meta property="product:price:amount" content="${effectivePrice}"><meta property="product:price:currency" content="PYG">
+<script type="application/ld+json">${safeJsonLd}</script>
+<style>body{font-family:system-ui,-apple-system,sans-serif;background:#f4f5f7;color:#111;margin:0}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:24px;padding:20px;box-shadow:0 8px 30px #0000000d}.logo{height:58px}.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:22px}.img{width:100%;aspect-ratio:1;object-fit:contain;background:#f8fafc;border-radius:18px}.price{font-size:26px;font-weight:900}.tag{color:#ff2d8a;font-weight:800}.btn{display:inline-block;background:#ff2d8a;color:#fff;text-decoration:none;padding:13px 18px;border-radius:14px;font-weight:900}.muted{color:#64748b;font-size:14px}@media(max-width:640px){.grid{grid-template-columns:1fr}}</style>
+</head><body><main class="wrap"><a href="/"><img class="logo" src="/images/brand/pinpop-logo-web.png" alt="PINPOP"></a><div class="card grid"><div><img class="img" src="${escapeHtmlServer(productImage)}" alt="${escapeHtmlServer(product.name)}"></div><div><div class="tag">${escapeHtmlServer(product.category)}</div><h1>${escapeHtmlServer(product.name)}</h1><div class="price">Gs. ${effectivePrice.toLocaleString('es-PY')}</div><p>${escapeHtmlServer(description)}</p><p class="muted">${Number(product.stock || 0) > 0 ? `Disponible: ${Number(product.stock)} unidades` : 'Agotado'}</p><a class="btn" href="${openInCatalog}">Ver en catálogo y agregar al carrito</a><p class="muted">Pedidos y confirmación por WhatsApp: +595 991 950 031</p></div></div></main></body></html>`;
+    res.type('html').send(html);
+  } catch (err) {
+    console.error('SEO product page error:', err);
+    res.status(500).type('text/plain').send('No se pudo cargar el producto.');
+  }
+});
+
 // Create Order (Rate-limited, authoritatively priced, and validated server-side)
 app.post('/api/orders', orderLimiter, requirePersistentDatabase, async (req, res) => {
   try {
@@ -220,8 +384,8 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
   if (isNetlifyRuntime && !process.env.DATABASE_URL) {
     return res.status(503).json({ error: 'Admin deshabilitado en Netlify hasta configurar DATABASE_URL.' });
   }
-  if (!JWT_SECRET || !process.env.ADMIN_PASSWORD) {
-    return res.status(503).json({ error: 'Administración no configurada. Defina JWT_SECRET y ADMIN_PASSWORD en Netlify.' });
+  if (!adminSecurityReady) {
+    return res.status(503).json({ error: 'Administración no configurada de forma segura. JWT_SECRET ≥32 y ADMIN_PASSWORD ≥12.' });
   }
 
   const { password } = req.body;
@@ -291,7 +455,9 @@ app.post('/api/admin/products', authenticateAdmin, requirePersistentDatabase, as
 // Admin: Update product
 app.put('/api/admin/products/:id', authenticateAdmin, requirePersistentDatabase, async (req, res) => {
   try {
+    const previous = await db.getProductById(req.params.id);
     const updated = await db.updateProductAdmin(req.params.id, req.body);
+    await cleanupRemovedManagedImages(previous, updated);
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -350,10 +516,34 @@ app.get('/api/categories', async (req, res) => {
   }
 });
 
+app.get('/api/admin/categories', authenticateAdmin, async (req, res) => {
+  try {
+    res.json(await db.getAllCategoriesAdmin());
+  } catch (err) {
+    res.status(500).json({ error: 'No se pudieron cargar las categorías.' });
+  }
+});
+
 app.post('/api/admin/categories', authenticateAdmin, requirePersistentDatabase, async (req, res) => {
   try {
     const newCat = await db.createCategoryAdmin(req.body);
     res.status(201).json(newCat);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/admin/categories/:id', authenticateAdmin, requirePersistentDatabase, async (req, res) => {
+  try {
+    res.json(await db.updateCategoryAdmin(req.params.id, req.body));
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/categories/:id/activate', authenticateAdmin, requirePersistentDatabase, async (req, res) => {
+  try {
+    res.json(await db.activateCategoryAdmin(req.params.id));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -368,67 +558,41 @@ app.delete('/api/admin/categories/:id', authenticateAdmin, requirePersistentData
   }
 });
 
-// Admin: Upload pin photo (persistent Storage on Netlify; local disk only in traditional local/VPS mode)
-app.post('/api/admin/upload', authenticateAdmin, requirePersistentDatabase, (req, res) => {
+// Admin: Upload pin photo. The server validates real file signatures before persistence.
+app.post('/api/admin/upload', authenticateAdmin, requirePersistentDatabase, uploadLimiter, (req, res) => {
   upload.single('image')(req, res, async (err) => {
     if (err instanceof multer.MulterError) {
-      if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(400).json({ error: 'La imagen excede el límite máximo permitido de 4MB.' });
-      }
-      return res.status(400).json({ error: 'Error de carga: ' + err.message });
-    } else if (err) {
-      return res.status(400).json({ error: err.message });
+      if (err.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'La imagen excede el límite máximo permitido de 4MB.' });
+      return res.status(400).json({ error: 'No se pudo procesar la carga de imagen.' });
     }
+    if (err) return res.status(400).json({ error: err.message });
+    if (!req.file?.buffer) return res.status(400).json({ error: 'No se envió ningún archivo de imagen.' });
 
-    if (!req.file) {
-      return res.status(400).json({ error: 'No se envió ningún archivo de imagen.' });
+    try {
+      const saved = await imageStorage.saveImage(req.file.buffer, req.file.mimetype);
+      return res.status(201).json(saved);
+    } catch (storageErr) {
+      console.error('PINPOP image upload error:', storageErr);
+      const publicMessage = /formato|imagen|tipo real|vacío|4MB/i.test(storageErr.message || '')
+        ? storageErr.message
+        : 'No se pudo guardar la imagen en el almacenamiento persistente.';
+      return res.status(400).json({ error: publicMessage });
     }
-
-    const ext = path.extname(req.file.originalname).toLowerCase();
-    const filename = req.file.filename || ('pin-' + crypto.randomUUID() + ext);
-    const hasSupabaseStorage = Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
-
-    if (hasSupabaseStorage) {
-      try {
-        const { createClient } = require('@supabase/supabase-js');
-        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
-          auth: { persistSession: false, autoRefreshToken: false }
-        });
-        const bucket = process.env.SUPABASE_BUCKET || 'pins-images';
-        const fileContent = req.file.buffer || fs.readFileSync(req.file.path);
-        const { error: uploadError } = await supabase.storage
-          .from(bucket)
-          .upload(filename, fileContent, {
-            contentType: req.file.mimetype,
-            upsert: false
-          });
-
-        if (uploadError) throw uploadError;
-
-        const { data: publicUrlData } = supabase.storage.from(bucket).getPublicUrl(filename);
-        if (req.file.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
-        return res.json({ url: publicUrlData.publicUrl, filename });
-      } catch (cloudErr) {
-        if (req.file.path && fs.existsSync(req.file.path) && isNetlifyRuntime) {
-          try { fs.unlinkSync(req.file.path); } catch (_) {}
-        }
-        if (isNetlifyRuntime) {
-          return res.status(500).json({ error: 'No se pudo guardar la imagen en Storage: ' + cloudErr.message });
-        }
-        console.warn('Fallo upload a Supabase Storage; se usará almacenamiento local:', cloudErr.message);
-      }
-    }
-
-    if (isNetlifyRuntime) {
-      return res.status(503).json({
-        error: 'Storage persistente no configurado. Defina SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY en Netlify.'
-      });
-    }
-
-    // Traditional local/VPS mode: multer already wrote the file to public/images/uploads.
-    const publicUrl = '/images/uploads/' + filename;
-    return res.json({ url: publicUrl, filename });
   });
+});
+
+app.post('/api/admin/upload/delete', authenticateAdmin, requirePersistentDatabase, uploadLimiter, async (req, res) => {
+  try {
+    const { url } = req.body || {};
+    if (!url || !imageStorage.isManagedImageUrl(url)) {
+      return res.status(400).json({ error: 'La imagen indicada no pertenece al almacenamiento administrado por PINPOP.' });
+    }
+    const result = await imageStorage.deleteImageByUrl(url);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('PINPOP image delete error:', err);
+    res.status(500).json({ error: 'No se pudo eliminar la imagen.' });
+  }
 });
 
 // Admin: Get all orders
@@ -505,8 +669,8 @@ app.put('/api/admin/settings', authenticateAdmin, requirePersistentDatabase, asy
 app.post('/api/admin/change-password', authenticateAdmin, requirePersistentDatabase, async (req, res) => {
   try {
     const { newPassword } = req.body;
-    if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres.' });
+    if (!newPassword || newPassword.length < 12) {
+      return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 12 caracteres.' });
     }
     await db.updateAdminPassword(newPassword);
     res.json({ success: true, message: 'Contraseña actualizada con éxito.' });

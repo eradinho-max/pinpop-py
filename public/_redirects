@@ -1,1 +1,5 @@
-/api/*  /.netlify/functions/api/:splat  200!
+/api/*       /.netlify/functions/api/:splat  200!
+/producto/*  /.netlify/functions/api/producto/:splat  200!
+/robots.txt  /.netlify/functions/api/robots.txt  200!
+/sitemap.xml /.netlify/functions/api/sitemap.xml 200!
+/llms.txt    /.netlify/functions/api/llms.txt 200!

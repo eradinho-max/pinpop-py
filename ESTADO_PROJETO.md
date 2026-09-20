@@ -1,44 +1,41 @@
-# PINPOP — Estado do Projeto
+# PINPOP — Estado del proyecto
 
-Data do backup: 2026-09-20
+## Macrobloco actual: Admin + imágenes + seguridad + SEO/IA
 
-## Concluído
+### Implementado
 
-- Backend é a única fonte de verdade para produtos, estoque, pedidos e admin.
-- Deploy preparado para Netlify Functions.
-- `/api/health` e `/api/products` disponíveis para diagnóstico.
-- Admin bloqueia escrita no Netlify sem `DATABASE_URL` persistente.
-- PostgreSQL/Supabase com schema completo para produtos, pedidos, itens, estoque, categorias, configurações e admin.
-- PostgreSQL usa transações na mesma conexão (`BEGIN/COMMIT/ROLLBACK`).
-- Operações de estoque usam bloqueio de linha no PostgreSQL para evitar concorrência incorreta.
-- Criação de pedido é transacional.
-- Criação de produto + movimento de estoque inicial é transacional.
-- Ajuste de estoque + histórico é transacional.
-- Confirmação e estorno de pedidos são transacionais.
-- Número amigável do pedido (`P1001`, `P1002`...) usa sequence no PostgreSQL.
-- Supabase JS fixado em versão estável no `package.json`.
-- Node 22 definido para compatibilidade atual no Netlify/Supabase.
+- Backend como única fuente de verdad.
+- Netlify Functions para Express.
+- PostgreSQL/Supabase preparado para persistencia serverless.
+- WhatsApp comercial normalizado a **+595 991 950 031**.
+- Catálogo, carrito y checkout por WhatsApp.
+- Pedidos y estados: pendiente → confirmado → entregado / cancelado.
+- Stock transaccional con movimientos y estorno.
+- Admin de productos: crear, editar, activar/desactivar, precio, descripción, SKU, stock mínimo, promo y destaque.
+- Stock editable únicamente por flujo de inventario después de creado el producto.
+- Captura directa por cámara en mobile.
+- Compresión a WebP/JPEG y upload persistente.
+- Foto principal + hasta 4 fotos adicionales por producto.
+- Elegir una foto de galería como principal.
+- Sustitución/eliminación con limpieza de uploads nuevos no utilizados.
+- Categorías: crear, editar, desactivar y reactivar.
+- Validación real de imágenes por magic bytes.
+- JWT, bcrypt, Helmet/CSP, CORS, rate limits y no-cache de APIs.
+- SEO: canonical, sitemap, páginas individuales de producto, Product JSON-LD.
+- Descubrimiento IA: OAI-SearchBot permitido, GPTBot bloqueado, `llms.txt` complementario.
+- Scripts `check:syntax` y `check:security`.
 
-## Produção no Netlify
+### Para Netlify
 
-Variáveis mínimas:
+Configurar: `DATABASE_URL`, `JWT_SECRET`, `ADMIN_PASSWORD`, `SITE_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_BUCKET`.
 
-- `DATABASE_URL` — usar Transaction Pooler/Supavisor do Supabase (porta 6543).
-- `PG_POOL_MAX=1`
-- `JWT_SECRET`
-- `ADMIN_PASSWORD`
-- `ALLOWED_ORIGINS`
+### Validação desta build
 
-Para imagens persistentes:
+- Sintaxe Node/JS: validada.
+- Scanner estático de segurança: 21/21 controles aprovados.
+- Upload falso com MIME JPEG e conteúdo não-imagem: rejeitado em teste unitário local.
+- Instalação npm/runtime completo: não concluído neste ambiente por indisponibilidade de rede; não afirmar teste end-to-end local.
 
-- `SUPABASE_URL`
-- `SUPABASE_SERVICE_ROLE_KEY`
-- `SUPABASE_BUCKET=pins-images`
+### Pendência não bloqueadora
 
-## Próxima etapa prevista
-
-Finalizar o ciclo de imagens persistentes e administração de galeria/categorias sem alterar o fluxo comercial existente.
-
-## Observação de validação
-
-A sintaxe JavaScript foi validada. O ambiente desta sessão não concluiu a instalação NPM, portanto o teste runtime completo com dependências e conexão Supabase real deve ser feito no deploy/ambiente com as variáveis configuradas.
+- Tailwind Browser CDN e Lucide ainda são dependências JavaScript externas. A próxima etapa de performance pode localizá-las/compilar CSS quando for possível instalar ou baixar dependências de forma verificável.

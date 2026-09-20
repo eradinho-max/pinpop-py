@@ -1,7 +1,7 @@
 # 🐊🩺 PINPOP • Pins para Crocs & Estetoscopio
 ### Catálogo Visual E-commerce con Identidad de Marca Oficial, Doble Línea de Productos, Simulador Interactivo y Mini-ERP Transaccional
 
-Aplicación web integral, robusta y lista para producción diseñada con la **identidad visual oficial de PINPOP** para la venta de **pins para calzados tipo Crocs** y **charms / clips para tubos de estetoscopio** en Paraguay (Guaraníes Gs.).
+Aplicación web integral preparada para operación comercial con backend persistente y la **identidad visual oficial de PINPOP** para la venta de **pins para calzados tipo Crocs** y **charms / clips para tubos de estetoscopio** en Paraguay (Guaraníes Gs.).
 
 ---
 
@@ -54,7 +54,7 @@ En la ventana de detalle de cada producto:
 ## 🚀 Cómo Iniciar el Proyecto Localmente
 
 ### Requisitos:
-- **Node.js** v18 o superior.
+- **Node.js** v22 o superior.
 - **npm** v8 o superior.
 
 ### Pasos:
@@ -73,7 +73,7 @@ En la ventana de detalle de cada producto:
    - `PORT`: Puerto donde correrá el servidor (por defecto `3000`).
    - `NODE_ENV`: Modo de ejecución (`development` o `production`).
    - `JWT_SECRET`: Clave secreta criptográfica para firmar tokens administrativos. En producción detiene el arranque si falta.
-   - `ADMIN_PASSWORD`: Contraseña inicial del panel administrativo (`pinpop2026`).
+   - `ADMIN_PASSWORD`: Contraseña inicial del panel administrativo (mínimo 12 caracteres; no hay contraseña pública de producción).
    - `DATABASE_PATH`: Ruta del archivo SQLite (por defecto `./data/pinpop.sqlite`).
 
 3. **Iniciar el servidor:**
@@ -83,7 +83,7 @@ En la ventana de detalle de cada producto:
 
 4. **Abrir en el navegador:**
    - **Tienda pública:** [http://localhost:3000](http://localhost:3000)
-   - **Panel de Administración:** [http://localhost:3000/#admin](http://localhost:3000/#admin) (Contraseña inicial: `pinpop2026`).
+   - **Panel de Administración:** [http://localhost:3000/#admin](http://localhost:3000/#admin) (usar el valor configurado en `ADMIN_PASSWORD`).
 
 ---
 
@@ -94,7 +94,7 @@ En la ventana de detalle de cada producto:
 | **Prevención de XSS Almacenado** | Doble capa: Sanitización backend con `sanitizeString()` (eliminación de etiquetas HTML) + función de escape estricto frontend `escapeHtml()` en todos los campos editables. |
 | **Autenticación y Claves JWT** | Tokens HMAC-SHA256 con expiración de 8 horas. No se almacenan contraseñas en cookies no seguras. |
 | **Protección contra Fuerza Bruta** | Middleware `express-rate-limit` en `/api/auth/login` (5 intentos en 15 min) y en `/api/orders` (máx. 15 pedidos cada 15 min por IP). |
-| **Headers de Seguridad HTTP (Helmet)** | `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, y deshabilitación del header informativo `X-Powered-By`. |
+| **Headers de Seguridad HTTP (Helmet)** | `Content-Security-Policy`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, y deshabilitación del header informativo `X-Powered-By`. |
 | **Cálculo de Precios Servidor** | El frontend únicamente envía `productId` y `quantity`. El servidor consulta la base de datos para calcular subtotales, delivery y total de forma inmutable. |
 | **Control Transaccional de Stock** | Al confirmar una venta en el panel administrativo, se verifica atómicamente que `stock >= cantidad_solicitada` y se genera una entrada en la auditoría `stock_movements`. |
 | **Privacidad de Costos** | Los endpoints públicos `/api/products` nunca exponen `costPrice` ni `minStock`. |
@@ -133,6 +133,6 @@ crocs-pins-store/
 1. El cliente explora la tienda, filtra por calzado Crocs o estetoscopio, y agrega sus pins al carrito.
 2. Abre el carrito y hace clic en **"Continuar con WhatsApp 📲"**.
 3. Ingresa su Nombre, Celular, Dirección o Retiro en Local y Método de Pago (Transferencia SIPAP, Efectivo contra entrega o QR).
-4. El servidor registra el pedido en estado `pending` y genera un enlace `https://wa.me/59598...` con el mensaje formateado en Guaraníes.
+4. El servidor registra el pedido en estado `pending` y genera un enlace `https://wa.me/595991950031` con el mensaje formateado en Guaraníes.
 5. El cliente envía el mensaje preformateado con un toque y el vendedor recibe el pedido con su código `#P...`.
 6. En el panel `/admin`, el vendedor confirma el pago con el botón **"Confirmar venta & Descontar Stock"**, lo que descuenta las unidades y registra la auditoría.

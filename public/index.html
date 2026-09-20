@@ -3,40 +3,37 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PINPOP • Pins para tus Crocs & Estetoscopio | Catálogo Oficial</title>
+  <title>PINPOP Paraguay | Pins para Crocs y Estetoscopios</title>
+  <meta name="description" content="Pins y charms compatibles con calzados tipo Crocs y accesorios para estetoscopios en Paraguay. Catálogo online, stock real y pedidos por WhatsApp.">
+  <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
+  <meta name="theme-color" content="#FF2D8A">
+  <link rel="canonical" href="/">
+  <link rel="alternate" hreflang="es-PY" href="/">
+  <link rel="alternate" hreflang="x-default" href="/">
+
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="PINPOP">
+  <meta property="og:title" content="PINPOP Paraguay | Pins para Crocs y Estetoscopios">
+  <meta property="og:description" content="Elegí tus pins favoritos, comprá con stock real y enviá tu pedido por WhatsApp en Paraguay.">
+  <meta property="og:image" content="/images/brand/pinpop-logo-web.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="PINPOP Paraguay | Pins para Crocs y Estetoscopios">
+  <meta name="twitter:description" content="Pins, charms y accesorios decorativos con pedidos por WhatsApp en Paraguay.">
+  <meta name="twitter:image" content="/images/brand/pinpop-logo-web.png">
+
+  <script type="application/ld+json">
+  {"@context":"https://schema.org","@graph":[{"@type":"Organization","@id":"/#organization","name":"PINPOP","url":"/","logo":"/images/brand/pinpop-logo-web.png","areaServed":{"@type":"Country","name":"Paraguay"},"contactPoint":{"@type":"ContactPoint","contactType":"sales","telephone":"+595991950031","availableLanguage":["es"]}},{"@type":"WebSite","@id":"/#website","url":"/","name":"PINPOP","inLanguage":"es-PY","publisher":{"@id":"/#organization"}}]}
+  </script>
   
-  <!-- Favicon using official brand logo -->
   <link rel="icon" type="image/png" href="images/brand/pinpop-logo-web.png">
 
-  <!-- Tailwind CSS CDN -->
+  <!-- Tailwind browser runtime; config is external so CSP does not require inline scripts. -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            pinpop: {
-              pink: '#FF2D8A',      // Rosa Principal
-              black: '#111111',     // Preto/Texto
-              lightpink: '#FFE8F1', // Rosa Claro
-              mint: '#A7E8D4',      // Verde Menta
-              yellow: '#FFD84D',    // Amarelo
-              bg: '#F4F5F7'         // Cinza Fundo
-            }
-          },
-          fontFamily: {
-            sans: ['Poppins', 'system-ui', 'sans-serif'],
-            display: ['Sora', 'system-ui', 'sans-serif']
-          }
-        }
-      }
-    }
-  </script>
+  <script src="tailwind-config.js"></script>
 
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Lucide pinned to an explicit version to avoid unbounded supply-chain changes. -->
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
 
-  <!-- Custom Brand Stylesheet (PINPOP Visual Identity) -->
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="bg-[#F4F5F7] text-[#111111] font-sans min-h-screen flex flex-col antialiased selection:bg-[#FF2D8A] selection:text-white">
@@ -57,7 +54,6 @@
         <a href="#" class="flex items-center gap-2 group shrink-0">
           <img 
             src="images/brand/pinpop-logo-web.png" 
-            onerror="this.src='/images/brand/pinpop-logo-web.png'"
             alt="PINPOP • Pins para tus Crocs & Estetoscopio" 
             class="h-11 sm:h-14 w-auto object-contain group-hover:scale-105 transition-transform drop-shadow-xs"
           />
@@ -329,6 +325,11 @@
           <button id="modalMobileZoomToggle" class="sm:hidden absolute bottom-2.5 right-2.5 bg-white/90 border border-slate-200 text-slate-800 text-[10px] font-bold px-2.5 py-1 rounded-full shadow-xs active:scale-95">
             🔍 Zoom
           </button>
+        </div>
+
+        <!-- Product Gallery Thumbnails -->
+        <div id="modalProductGallery" class="hidden flex items-center gap-2 overflow-x-auto no-scrollbar py-1" aria-label="Galería de imágenes del producto">
+          <!-- Rendered by JS -->
         </div>
 
         <!-- Product Details -->
@@ -722,7 +723,7 @@
       <!-- Top Bar with Official Logo -->
       <div class="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-900 text-white shrink-0">
         <div class="flex items-center gap-2.5">
-          <img src="images/brand/pinpop-logo-web.png" onerror="this.src='/images/brand/pinpop-logo-web.png'" class="h-8 w-auto object-contain">
+          <img src="images/brand/pinpop-logo-web.png" class="h-8 w-auto object-contain">
           <span class="font-display font-black text-xs sm:text-sm text-white">| Panel de Administración</span>
         </div>
         <div class="flex items-center gap-2">
@@ -738,7 +739,7 @@
 
       <!-- Auth Gate (Shown if not logged in) -->
       <div id="adminLoginGate" class="p-8 max-w-sm mx-auto w-full my-auto text-center space-y-4">
-        <img src="images/brand/pinpop-logo-web.png" onerror="this.src='/images/brand/pinpop-logo-web.png'" class="h-12 w-auto object-contain mx-auto">
+        <img src="images/brand/pinpop-logo-web.png" class="h-12 w-auto object-contain mx-auto">
         <div>
           <h3 class="font-display font-black text-lg text-slate-900">Acceso Administrativo</h3>
           <p class="text-xs text-slate-500 mt-1">Ingresá la contraseña protegida con autenticación Bearer JWT.</p>
@@ -1096,7 +1097,7 @@
                 type="password" 
                 id="adminNewPasswordInput" 
                 required 
-                placeholder="Nueva contraseña (mínimo 6 caracteres)"
+                minlength="12" placeholder="Nueva contraseña (mínimo 12 caracteres)"
                 class="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white"
               />
               <button type="submit" class="btn-pinpop-dark px-4 py-2 font-bold text-xs rounded-xl shadow">
@@ -1261,7 +1262,7 @@
             </div>
 
             <div>
-              <label class="block font-black text-slate-800 mb-1">Stock Físico Inicial *</label>
+              <label id="pinStockLabel" class="block font-black text-slate-800 mb-1">Stock Físico Inicial *</label>
               <div class="flex items-center gap-1">
                 <input 
                   type="number" 
@@ -1272,7 +1273,7 @@
                   class="w-full px-3 py-2.5 bg-slate-50 border border-slate-200 rounded-xl font-black text-emerald-700 text-center focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/30"
                 />
               </div>
-              <div class="flex items-center gap-1 mt-1">
+              <div id="stockQuickButtons" class="flex items-center gap-1 mt-1">
                 <button type="button" class="btn-stock-quick-add px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold" data-val="5">+5</button>
                 <button type="button" class="btn-stock-quick-add px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold" data-val="10">+10</button>
                 <button type="button" class="btn-stock-quick-add px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-md text-[10px] font-bold" data-val="20">+20</button>
@@ -1341,6 +1342,20 @@
             <div>
               <label class="block font-bold text-slate-700 mb-1">Descripción Comercial</label>
               <textarea id="pinDescriptionInput" rows="2" placeholder="Detalles, material, compatibilidad..." class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs"></textarea>
+            </div>
+
+            <!-- Galería adicional: máximo 4 secundarias + 1 principal -->
+            <div class="space-y-2 pt-1 border-t border-slate-100">
+              <div class="flex items-center justify-between gap-2">
+                <div>
+                  <label class="block font-bold text-slate-700">Galería del Producto</label>
+                  <p class="text-[10px] text-slate-400">Hasta 4 fotos adicionales. Podés convertir cualquiera en principal.</p>
+                </div>
+                <button type="button" id="btnAddExtraImages" class="px-2.5 py-1.5 bg-white border border-slate-200 hover:border-[#FF2D8A] text-[#FF2D8A] rounded-lg text-[10px] font-black whitespace-nowrap">+ Añadir fotos</button>
+              </div>
+              <input type="file" id="prodExtraImagesInput" accept="image/*" multiple class="hidden" />
+              <div id="adminGalleryPreview" class="grid grid-cols-4 gap-2"></div>
+              <p id="adminGalleryCount" class="text-[10px] text-slate-400">0/4 fotos adicionales</p>
             </div>
 
             <!-- Destacado & Estado -->
@@ -1538,7 +1553,7 @@
 
         <!-- Existing Categories List -->
         <div>
-          <span class="font-black text-slate-400 uppercase text-[10px] block mb-2">Categorías Activas</span>
+          <span class="font-black text-slate-400 uppercase text-[10px] block mb-2">Categorías registradas</span>
           <div id="adminCategoriesList" class="max-h-56 overflow-y-auto space-y-1.5 pr-1">
             <!-- Rendered by JS -->
           </div>
@@ -1555,11 +1570,11 @@
   <footer class="mt-auto bg-white border-t border-slate-200 py-8 px-4 text-center text-xs text-slate-500 space-y-3">
     <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
       <div class="flex items-center gap-2">
-        <img src="images/brand/pinpop-logo-web.png" onerror="this.src='/images/brand/pinpop-logo-web.png'" class="h-9 sm:h-10 w-auto object-contain">
+        <img src="images/brand/pinpop-logo-web.png" alt="PINPOP" class="h-9 sm:h-10 w-auto object-contain">
         <span class="text-slate-400 font-bold">| Asunción, Paraguay 🇵🇾</span>
       </div>
       <p class="text-[11px] text-slate-400">
-        Pins, charms y dijes compatibles para calzados y estetoscopios clínicos. Pedidos directos vía WhatsApp.
+        Pins y accesorios compatibles con Crocs en Paraguay, charms decorativos y dijes para estetoscopios en Asunción. Catálogo online con stock real y pedidos vía WhatsApp.
       </p>
       <div class="flex items-center gap-3 text-slate-400">
         <span class="font-mono text-[10px]">PINPOP v3.2</span>

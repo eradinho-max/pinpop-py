@@ -8,6 +8,10 @@
   let products = [];
   let catalogLoadFailed = false;
   let categories = [];
+  let adminCategories = [];
+  let productFormGalleryImages = [];
+  let productFormOriginalImages = new Set();
+  let productFormNewUploads = new Set();
   let settings = {};
   let cart = []; // [{ id, quantity }]
   let currentTargetType = 'crocs'; // 'crocs' or 'estetoscopio'
@@ -86,6 +90,11 @@
     initStockAdjustHandlers();
     renderAll();
     refreshLucide();
+
+    const initialProductId = new URLSearchParams(window.location.search).get('producto');
+    if (initialProductId && products.some(p => p.id === initialProductId)) {
+      openProductDetailModal(initialProductId);
+    }
 
     if (authToken) {
       verifyActiveSession();
@@ -335,11 +344,9 @@
   }
 
   function getActiveCategoriesForCurrentMode() {
-    const list = categories.filter(c => (c.targetType || 'crocs') === currentTargetType).map(c => c.name);
-    // Include any distinct category found in products
-    products.filter(p => (p.targetType || 'crocs') === currentTargetType).forEach(p => {
-      if (p.category && !list.includes(p.category)) list.push(p.category);
-    });
+    const list = categories
+      .filter(c => (c.targetType || 'crocs') === currentTargetType && c.active !== false && Number(c.active ?? 1) !== 0)
+      .map(c => c.name);
     return ['Todos', ...list];
   }
 
@@ -362,9 +369,9 @@
               ? 'bg-[#FF2D8A] text-white shadow-xs ring-2 ring-[#FF2D8A] ring-offset-1' 
               : 'bg-white hover:bg-[#FFE8F1] text-slate-700 border border-slate-200'
           }"
-          data-category="${cat}"
+          data-category="${escapeHtml(cat)}"
         >
-          <span>${cat}</span>
+          <span>${escapeHtml(cat)}</span>
           <span class="text-[10px] px-1.5 py-0.2 rounded-full ${isActive ? 'bg-[#111111] text-white' : 'bg-slate-100 text-slate-600'}">
             ${count}
           </span>
@@ -511,7 +518,7 @@
               </div>
 
               <h3 class="font-bold text-[#111111] text-xs sm:text-sm line-clamp-1 group-hover:text-[#FF2D8A] transition-colors mt-0.5" title="${escapeHtml(p.name)}">
-                ${escapeHtml(p.name)}
+                <a class="product-seo-link" href="/producto/${encodeURIComponent(p.id)}">${escapeHtml(p.name)}</a>
               </h3>
               
               <!-- Stock Indicator (Brand Style Badges) -->
@@ -573,6 +580,7 @@
     grid.querySelectorAll('.product-card').forEach(card => {
       card.addEventListener('click', (e) => {
         if (e.target.closest('.btn-quick-add') || e.target.closest('.btn-card-favorite')) return;
+        if (e.target.closest('.product-seo-link')) e.preventDefault();
         openProductDetailModal(card.dataset.id);
       });
     });
@@ -656,6 +664,8 @@
     document.getElementById('modalProductSku').textContent = `SKU: ${product.sku || 'PIN'}`;
     const imgEl = document.getElementById('modalProductImage');
     imgEl.src = product.image || '/images/pins/estetoscopio-pin.png';
+    imgEl.alt = product.name || 'Pin PINPOP';
+    renderProductGallery(product);
     imgEl.style.transform = 'scale(1)';
     imgEl.style.transformOrigin = 'center center';
 
@@ -708,6 +718,32 @@
 
     modal.classList.remove('hidden');
     refreshLucide();
+  }
+
+
+  function renderProductGallery(product) {
+    const container = document.getElementById('modalProductGallery');
+    if (!container) return;
+    const images = [product.image, ...(Array.isArray(product.galleryImages) ? product.galleryImages : [])]
+      .filter(Boolean)
+      .filter((url, idx, arr) => arr.indexOf(url) === idx);
+    if (images.length <= 1) {
+      container.innerHTML = '';
+      container.classList.add('hidden');
+      return;
+    }
+    container.innerHTML = images.map((url, index) => `
+      <button type="button" class="product-gallery-thumb w-14 h-14 shrink-0 rounded-xl border ${index === 0 ? 'border-[#FF2D8A] ring-1 ring-[#FF2D8A]' : 'border-slate-200'} bg-white p-1" data-url="${escapeHtml(url)}">
+        <img src="${escapeHtml(url)}" alt="${escapeHtml(product.name)} foto ${index + 1}" class="w-full h-full object-contain rounded-lg">
+      </button>`).join('');
+    container.classList.remove('hidden');
+    container.querySelectorAll('.product-gallery-thumb').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.getElementById('modalProductImage').src = btn.dataset.url;
+        container.querySelectorAll('.product-gallery-thumb').forEach(b => b.className = b.className.replace('border-[#FF2D8A] ring-1 ring-[#FF2D8A]', 'border-slate-200'));
+        btn.className = btn.className.replace('border-slate-200', 'border-[#FF2D8A] ring-1 ring-[#FF2D8A]');
+      });
+    });
   }
 
   function updateModalFavoriteButton() {
@@ -1305,10 +1341,117 @@
     });
   }
 
+  async function uploadOptimizedImage(file) {
+    const sourceTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif'];
+    if (!file || !sourceTypes.includes((file.type || '').toLowerCase())) {
+      throw new Error('Seleccioná una foto JPG, PNG, WebP, HEIC o HEIF válida.');
+    }
+    if (file.size > 15 * 1024 * 1024) throw new Error('La foto original supera 15 MB.');
+    const origSizeKb = Math.round(file.size / 1024);
+    const compressedBlob = await compressImageFile(file, 1200, 1200, 0.82);
+    if (!compressedBlob) throw new Error('No se pudo optimizar la imagen.');
+    const compSizeKb = Math.round(compressedBlob.size / 1024);
+    const formData = new FormData();
+    formData.append('image', compressedBlob, 'photo.webp');
+    const res = await fetch('/api/admin/upload', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${authToken}` },
+      body: formData
+    });
+    if (res.status === 401) {
+      handleUnauthorized();
+      throw new Error('Sesión administrativa vencida.');
+    }
+    const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
+    if (!res.ok || !data?.url) throw new Error(data?.error || 'No se pudo subir la imagen.');
+    productFormNewUploads.add(data.url);
+    return { url: data.url, origSizeKb, compSizeKb };
+  }
+
+  async function deleteManagedUpload(url) {
+    if (!url || !authToken) return;
+    try {
+      const res = await fetch('/api/admin/upload/delete', {
+        method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ url })
+      });
+      if (res.ok) productFormNewUploads.delete(url);
+    } catch (_) {
+      // La limpieza no debe bloquear el formulario; el backend conserva integridad del producto.
+    }
+  }
+
+  function setMainProductImage(url) {
+    const hidden = document.getElementById('pinImageInput');
+    const preview = document.getElementById('prodImagePreviewImg');
+    const container = document.getElementById('prodImagePreviewContainer');
+    const mockup = document.getElementById('mockupCardImg');
+    if (hidden) hidden.value = url || '';
+    if (url) {
+      if (preview) preview.src = url;
+      if (mockup) mockup.src = url;
+      if (container) container.classList.remove('hidden');
+    } else {
+      if (preview) preview.removeAttribute('src');
+      if (mockup) mockup.src = '/images/pins/estetoscopio-pin.png';
+      if (container) container.classList.add('hidden');
+    }
+  }
+
+  function renderAdminGalleryPreview() {
+    const container = document.getElementById('adminGalleryPreview');
+    const count = document.getElementById('adminGalleryCount');
+    if (!container) return;
+    productFormGalleryImages = productFormGalleryImages.filter(Boolean).slice(0, 4);
+    if (count) count.textContent = `${productFormGalleryImages.length}/4 fotos adicionales`;
+    container.innerHTML = productFormGalleryImages.map((url, index) => `
+      <div class="relative rounded-xl border border-slate-200 bg-white p-1 aspect-square group">
+        <img src="${escapeHtml(url)}" alt="Foto adicional ${index + 1}" class="w-full h-full object-contain rounded-lg">
+        <div class="absolute inset-x-1 bottom-1 flex gap-1">
+          <button type="button" class="btn-gallery-main flex-1 bg-slate-900/90 text-white text-[8px] font-black rounded px-1 py-1" data-index="${index}">Principal</button>
+          <button type="button" class="btn-gallery-remove bg-rose-600 text-white text-[8px] font-black rounded px-1.5 py-1" data-index="${index}" aria-label="Eliminar foto">×</button>
+        </div>
+      </div>`).join('');
+
+    container.querySelectorAll('.btn-gallery-main').forEach(btn => btn.addEventListener('click', () => {
+      const index = Number(btn.dataset.index);
+      const selected = productFormGalleryImages[index];
+      const currentMain = document.getElementById('pinImageInput').value.trim();
+      if (!selected) return;
+      productFormGalleryImages.splice(index, 1);
+      if (currentMain && currentMain !== selected) productFormGalleryImages.unshift(currentMain);
+      productFormGalleryImages = productFormGalleryImages.filter((u, i, arr) => u && u !== selected && arr.indexOf(u) === i).slice(0, 4);
+      setMainProductImage(selected);
+      renderAdminGalleryPreview();
+    }));
+
+    container.querySelectorAll('.btn-gallery-remove').forEach(btn => btn.addEventListener('click', async () => {
+      const index = Number(btn.dataset.index);
+      const [removed] = productFormGalleryImages.splice(index, 1);
+      if (removed && productFormNewUploads.has(removed)) await deleteManagedUpload(removed);
+      renderAdminGalleryPreview();
+    }));
+  }
+
+  async function cleanupUnsavedUploads(keepUrls = []) {
+    const keep = new Set(keepUrls.filter(Boolean));
+    const pending = [...productFormNewUploads].filter(url => !keep.has(url));
+    for (const url of pending) await deleteManagedUpload(url);
+  }
+
+  function resetProductImageState(mainImage = '', galleryImages = []) {
+    productFormGalleryImages = Array.isArray(galleryImages) ? galleryImages.filter(Boolean).slice(0, 4) : [];
+    productFormOriginalImages = new Set([mainImage, ...productFormGalleryImages].filter(Boolean));
+    productFormNewUploads = new Set();
+    setMainProductImage(mainImage);
+    renderAdminGalleryPreview();
+  }
+
   // --- FAST ADD / EDIT PRODUCT SYSTEM (Secciones 1 a 23) ---
   function initFastAddProductHandlers() {
     const cameraInput = document.getElementById('prodCameraInput');
     const galleryInput = document.getElementById('prodGalleryInput');
+    const extraImagesInput = document.getElementById('prodExtraImagesInput');
+    const addExtraImagesBtn = document.getElementById('btnAddExtraImages');
     const triggerCamBtn = document.getElementById('btnTriggerCamera');
     const triggerGalBtn = document.getElementById('btnTriggerGallery');
     const changePhotoBtn = document.getElementById('btnChangePhoto');
@@ -1326,14 +1469,17 @@
     if (triggerGalBtn && galleryInput) {
       triggerGalBtn.addEventListener('click', () => galleryInput.click());
     }
+    if (addExtraImagesBtn && extraImagesInput) {
+      addExtraImagesBtn.addEventListener('click', () => extraImagesInput.click());
+    }
     if (changePhotoBtn && galleryInput) {
       changePhotoBtn.addEventListener('click', () => galleryInput.click());
     }
     if (removePhotoBtn) {
-      removePhotoBtn.addEventListener('click', () => {
-        document.getElementById('pinImageInput').value = '';
-        document.getElementById('prodImagePreviewContainer').classList.add('hidden');
-        document.getElementById('mockupCardImg').src = '/images/pins/estetoscopio-pin.png';
+      removePhotoBtn.addEventListener('click', async () => {
+        const current = document.getElementById('pinImageInput').value.trim();
+        if (current && productFormNewUploads.has(current)) await deleteManagedUpload(current);
+        setMainProductImage('');
         showToast('Foto eliminada del formulario.', 'info');
       });
     }
@@ -1370,55 +1516,20 @@
         if (mockupImg) mockupImg.src = localUrl;
         if (previewContainer) previewContainer.classList.remove('hidden');
 
-        // 2. Client-side compression
-        const origSizeKb = Math.round(file.size / 1024);
-        const compressedBlob = await compressImageFile(file, 1200, 1200, 0.82);
-        const compSizeKb = Math.round(compressedBlob.size / 1024);
+        // 2. Optimizar y persistir la imagen
+        const previousMain = document.getElementById('pinImageInput').value.trim();
+        const uploaded = await uploadOptimizedImage(file);
+        const finalImageUrl = uploaded.url;
+        if (previousMain && previousMain !== finalImageUrl && productFormNewUploads.has(previousMain)) {
+          await deleteManagedUpload(previousMain);
+        }
+        setMainProductImage(finalImageUrl);
 
         if (statusEl) {
-          statusEl.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span> <span>Subiendo imagen...</span>`;
+          statusEl.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span> <span class="text-emerald-700 font-bold">✓ Imagen lista y optimizada (${uploaded.compSizeKb} KB WebP)</span>`;
         }
-
-        // 3. Subir al servidor. La imagen solo queda lista si el backend confirma el upload.
-        const formData = new FormData();
-        formData.append('image', compressedBlob, 'photo.webp');
-
-        const res = await fetch('/api/admin/upload', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${authToken}`
-          },
-          body: formData
-        });
-
-        if (res.status === 401) {
-          handleUnauthorized();
-          return;
-        }
-
-        const uploadData = res.headers.get('content-type')?.includes('application/json')
-          ? await res.json()
-          : null;
-
-        if (!res.ok || !uploadData?.url) {
-          throw new Error(uploadData?.error || 'No se pudo subir la imagen al servidor.');
-        }
-
-        const finalImageUrl = uploadData.url;
-
-        // 4. Update hidden input with uploaded URL
-        document.getElementById('pinImageInput').value = finalImageUrl;
-        if (previewImg) previewImg.src = finalImageUrl;
-        if (mockupImg) mockupImg.src = finalImageUrl;
-
-        if (statusEl) {
-          statusEl.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span> <span class="text-emerald-700 font-bold">✓ Imagen lista y optimizada (${compSizeKb} KB WebP)</span>`;
-        }
-        if (metaEl) {
-          metaEl.textContent = `${origSizeKb} KB → ${compSizeKb} KB (WebP)`;
-        }
-
-        showToast('✓ Foto comprimida en WebP lista.', 'success');
+        if (metaEl) metaEl.textContent = `${uploaded.origSizeKb} KB → ${uploaded.compSizeKb} KB (WebP)`;
+        showToast('✓ Foto optimizada y guardada.', 'success');
       } catch (err) {
         showToast(err.message, 'error');
         if (statusEl) {
@@ -1432,10 +1543,47 @@
     };
 
     if (cameraInput) {
-      cameraInput.addEventListener('change', (e) => handleFileChosen(e.target.files[0]));
+      cameraInput.addEventListener('change', async (e) => {
+        await handleFileChosen(e.target.files[0]);
+        e.target.value = '';
+      });
     }
     if (galleryInput) {
-      galleryInput.addEventListener('change', (e) => handleFileChosen(e.target.files[0]));
+      galleryInput.addEventListener('change', async (e) => {
+        await handleFileChosen(e.target.files[0]);
+        e.target.value = '';
+      });
+    }
+    if (extraImagesInput) {
+      extraImagesInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files || []);
+        const available = Math.max(0, 4 - productFormGalleryImages.length);
+        if (!available) {
+          showToast('La galería ya tiene 4 fotos adicionales.', 'warning');
+          e.target.value = '';
+          return;
+        }
+        isUploadingPhoto = true;
+        const saveBtn = document.getElementById('btnSaveProduct');
+        const saveAnotherBtn = document.getElementById('btnSaveAndCreateAnother');
+        if (saveBtn) saveBtn.disabled = true;
+        if (saveAnotherBtn) saveAnotherBtn.disabled = true;
+        try {
+          for (const file of files.slice(0, available)) {
+            const uploaded = await uploadOptimizedImage(file);
+            if (!productFormGalleryImages.includes(uploaded.url)) productFormGalleryImages.push(uploaded.url);
+            renderAdminGalleryPreview();
+          }
+          showToast('Fotos adicionales guardadas.', 'success');
+        } catch (err) {
+          showToast(err.message || 'No se pudieron subir las fotos adicionales.', 'error');
+        } finally {
+          isUploadingPhoto = false;
+          if (saveBtn) saveBtn.disabled = false;
+          if (saveAnotherBtn) saveAnotherBtn.disabled = false;
+          e.target.value = '';
+        }
+      });
     }
 
     // Toggle Más Opciones
@@ -1576,9 +1724,14 @@
     const description = document.getElementById('pinDescriptionInput').value.trim();
     const featured = document.getElementById('pinFeaturedInput').checked;
     const active = Number(document.getElementById('pinActiveInput').value);
-    const image = document.getElementById('pinImageInput').value.trim() || '/images/pins/estetoscopio-pin.png';
+    const image = document.getElementById('pinImageInput').value.trim();
+    if (!image) {
+      showToast('La foto principal es obligatoria.', 'warning');
+      return;
+    }
 
-    const payload = { name, targetType, category, price, stock, sku, promoPrice, costPrice, minStock, badge, description, featured, active, image };
+    const galleryImages = productFormGalleryImages.filter(Boolean).filter(url => url !== image).slice(0, 4);
+    const payload = { name, targetType, category, price, stock, sku, promoPrice, costPrice, minStock, badge, description, featured, active, image, galleryImages };
 
     try {
       const res = await fetch(editId ? `/api/admin/products/${editId}` : '/api/admin/products', {
@@ -1594,6 +1747,10 @@
 
       const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
       if (!res.ok) throw new Error(data?.error || 'No se pudo guardar el producto.');
+
+      await cleanupUnsavedUploads([image, ...galleryImages]);
+      productFormNewUploads.clear();
+      productFormOriginalImages = new Set([image, ...galleryImages]);
 
       await loadProducts();
       renderProducts();
@@ -1612,7 +1769,7 @@
 
         document.getElementById('editProductId').value = '';
         document.getElementById('pinNameInput').value = '';
-        document.getElementById('pinImageInput').value = '';
+        resetProductImageState('', []);
         document.getElementById('pinSkuInput').value = '';
         document.getElementById('pinDescriptionInput').value = '';
         document.getElementById('pinBadgeInput').value = '';
@@ -1636,6 +1793,9 @@
           document.getElementById('mockupCardPrice').textContent = 'Gs. 0';
           document.getElementById('pinPriceFormattedLabel').textContent = 'Gs. 0';
         }
+        document.getElementById('pinStockInput').disabled = false;
+        document.getElementById('pinStockLabel').textContent = 'Stock Físico Inicial *';
+    document.getElementById('stockQuickButtons')?.classList.remove('hidden');
         document.getElementById('pinStockInput').value = keepStock ? savedStock : '10';
         document.getElementById('pinNameInput').focus();
       } else {
@@ -1815,12 +1975,27 @@
     }
   }
 
-  // --- DYNAMIC CATEGORIES MANAGEMENT (Sección 30) ---
-  function openCategoryManagerModal() {
-    renderAdminCategoriesList();
-    const modal = document.getElementById('categoryManagerModal');
-    if (modal) modal.classList.remove('hidden');
-    refreshLucide();
+  // --- DYNAMIC CATEGORIES MANAGEMENT ---
+  async function loadAdminCategories() {
+    if (!authToken) return [];
+    const res = await fetch('/api/admin/categories', { headers: getAuthHeaders() });
+    if (res.status === 401) { handleUnauthorized(); return []; }
+    const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
+    if (!res.ok || !Array.isArray(data)) throw new Error(data?.error || 'No se pudieron cargar las categorías.');
+    adminCategories = data;
+    return data;
+  }
+
+  async function openCategoryManagerModal() {
+    try {
+      await loadAdminCategories();
+      renderAdminCategoriesList();
+      const modal = document.getElementById('categoryManagerModal');
+      if (modal) modal.classList.remove('hidden');
+      refreshLucide();
+    } catch (err) {
+      showToast(err.message || 'No se pudieron cargar las categorías.', 'error');
+    }
   }
 
   function closeCategoryManagerModal() {
@@ -1831,115 +2006,111 @@
   function renderAdminCategoriesList() {
     const container = document.getElementById('adminCategoriesList');
     if (!container) return;
-
-    if (categories.length === 0) {
+    if (adminCategories.length === 0) {
       container.innerHTML = `<p class="py-3 text-slate-400 text-center">No hay categorías registradas.</p>`;
       return;
     }
 
-    container.innerHTML = categories.map(cat => `
-      <div class="flex items-center justify-between p-2 bg-slate-50 rounded-xl border border-slate-200">
-        <div class="flex items-center gap-2">
-          <span class="text-xs font-bold text-slate-800">${escapeHtml(cat.name)}</span>
-          <span class="text-[9px] font-bold px-1.5 py-0.2 rounded ${cat.targetType === 'estetoscopio' ? 'bg-purple-100 text-purple-700' : 'bg-slate-200 text-slate-600'}">
+    container.innerHTML = adminCategories.map(cat => {
+      const active = Boolean(Number(cat.active));
+      return `
+      <div class="flex items-center justify-between gap-2 p-2 bg-slate-50 rounded-xl border border-slate-200 ${active ? '' : 'opacity-60'}">
+        <div class="min-w-0 flex items-center gap-2">
+          <span class="text-xs font-bold text-slate-800 truncate">${escapeHtml(cat.name)}</span>
+          <span class="text-[9px] font-bold px-1.5 py-0.5 rounded ${cat.targetType === 'estetoscopio' ? 'bg-purple-100 text-purple-700' : 'bg-slate-200 text-slate-600'}">
             ${cat.targetType === 'estetoscopio' ? '🩺 Esteto' : '🐊 Crocs'}
           </span>
+          <span class="text-[9px] font-bold ${active ? 'text-emerald-600' : 'text-slate-400'}">${active ? 'Activa' : 'Inactiva'}</span>
         </div>
-        <button class="btn-delete-cat text-slate-400 hover:text-rose-600 p-1" data-id="${cat.id}" title="Eliminar categoría">
-          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
-        </button>
-      </div>
-    `).join('');
+        <div class="flex items-center gap-1 shrink-0">
+          <button class="btn-edit-cat text-slate-500 hover:text-[#FF2D8A] p-1" data-id="${escapeHtml(cat.id)}" title="Editar categoría"><i data-lucide="pencil" class="w-3.5 h-3.5"></i></button>
+          ${active
+            ? `<button class="btn-delete-cat text-slate-400 hover:text-rose-600 p-1" data-id="${escapeHtml(cat.id)}" title="Desactivar categoría"><i data-lucide="eye-off" class="w-3.5 h-3.5"></i></button>`
+            : `<button class="btn-activate-cat text-slate-400 hover:text-emerald-600 p-1" data-id="${escapeHtml(cat.id)}" title="Reactivar categoría"><i data-lucide="eye" class="w-3.5 h-3.5"></i></button>`}
+        </div>
+      </div>`;
+    }).join('');
 
-    container.querySelectorAll('.btn-delete-cat').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('¿Deseás desactivar esta categoría?')) return;
-        try {
-          const res = await fetch(`/api/admin/categories/${btn.dataset.id}`, {
-            method: 'DELETE',
-            headers: getAuthHeaders()
-          });
-          if (res.ok) {
-            await loadCategories();
-            populateCategoryDropdowns();
-            renderCategoryChips();
-            renderAdminCategoriesList();
-            showToast('Categoría desactivada.', 'info');
-          }
-        } catch (e) {
-          showToast('Error al desactivar categoría', 'error');
-        }
-      });
-    });
+    container.querySelectorAll('.btn-edit-cat').forEach(btn => btn.addEventListener('click', async () => {
+      const cat = adminCategories.find(c => String(c.id) === String(btn.dataset.id));
+      if (!cat) return;
+      const newName = prompt('Nombre de la categoría:', cat.name);
+      if (newName === null || !newName.trim()) return;
+      try {
+        const res = await fetch(`/api/admin/categories/${encodeURIComponent(cat.id)}`, {
+          method: 'PUT', headers: getAuthHeaders(),
+          body: JSON.stringify({ name: newName.trim(), targetType: cat.targetType, active: Boolean(Number(cat.active)) })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'No se pudo editar la categoría.');
+        await Promise.all([loadCategories(), loadAdminCategories()]);
+        populateCategoryDropdowns(); renderCategoryChips(); renderAdminCategoriesList();
+        showToast('Categoría actualizada.', 'success');
+      } catch (err) { showToast(err.message, 'error'); }
+    }));
 
+    container.querySelectorAll('.btn-delete-cat').forEach(btn => btn.addEventListener('click', async () => {
+      if (!confirm('¿Deseás desactivar esta categoría? Los productos conservarán su historial.')) return;
+      try {
+        const res = await fetch(`/api/admin/categories/${encodeURIComponent(btn.dataset.id)}`, { method: 'DELETE', headers: getAuthHeaders() });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'No se pudo desactivar la categoría.');
+        await Promise.all([loadCategories(), loadAdminCategories()]);
+        populateCategoryDropdowns(); renderCategoryChips(); renderAdminCategoriesList();
+        showToast('Categoría desactivada.', 'info');
+      } catch (err) { showToast(err.message, 'error'); }
+    }));
+
+    container.querySelectorAll('.btn-activate-cat').forEach(btn => btn.addEventListener('click', async () => {
+      try {
+        const res = await fetch(`/api/admin/categories/${encodeURIComponent(btn.dataset.id)}/activate`, { method: 'POST', headers: getAuthHeaders() });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'No se pudo reactivar la categoría.');
+        await Promise.all([loadCategories(), loadAdminCategories()]);
+        populateCategoryDropdowns(); renderCategoryChips(); renderAdminCategoriesList();
+        showToast('Categoría reactivada.', 'success');
+      } catch (err) { showToast(err.message, 'error'); }
+    }));
     refreshLucide();
   }
 
   function populateCategoryDropdowns(selectedVal = null) {
     const catSelect = document.getElementById('pinCategoryInput');
     if (!catSelect) return;
-
     const currentLine = document.getElementById('pinTargetTypeInput')?.value || 'crocs';
-    const list = categories.filter(c => (c.targetType || 'crocs') === currentLine);
-
-    catSelect.innerHTML = list.map(c => `
-      <option value="${escapeHtml(c.name)}" ${selectedVal === c.name ? 'selected' : ''}>
-        ${escapeHtml(c.name)}
-      </option>
-    `).join('');
-
-    // If empty fallback
-    if (list.length === 0) {
-      catSelect.innerHTML = `<option value="General">General</option>`;
-    }
+    const list = categories.filter(c => (c.targetType || 'crocs') === currentLine && c.active !== false && Number(c.active ?? 1) !== 0);
+    catSelect.innerHTML = list.map(c => `<option value="${escapeHtml(c.name)}" ${selectedVal === c.name ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
+    if (list.length === 0) catSelect.innerHTML = `<option value="General">General</option>`;
   }
 
   async function handleNewCategorySubmit(e) {
     e.preventDefault();
     if (!authToken) return;
-
     const name = document.getElementById('newCatNameInput').value.trim();
     const targetType = document.getElementById('newCatLineInput').value;
-
-    if (!name) {
-      showToast('Por favor escribí el nombre de la categoría.', 'warning');
-      return;
-    }
-
+    if (!name) { showToast('Por favor escribí el nombre de la categoría.', 'warning'); return; }
     try {
-      const res = await fetch('/api/admin/categories', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ name, targetType })
-      });
-
-      if (res.status === 401) {
-        handleUnauthorized();
-        return;
-      }
-
+      const res = await fetch('/api/admin/categories', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ name, targetType }) });
+      if (res.status === 401) { handleUnauthorized(); return; }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error al crear categoría');
-
       document.getElementById('newCatNameInput').value = '';
-      await loadCategories();
-      populateCategoryDropdowns(name);
-      renderCategoryChips();
-      renderAdminCategoriesList();
+      await Promise.all([loadCategories(), loadAdminCategories()]);
+      populateCategoryDropdowns(name); renderCategoryChips(); renderAdminCategoriesList();
       showToast(`✓ Categoría "${name}" creada con éxito.`, 'success');
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
+    } catch (err) { showToast(err.message, 'error'); }
   }
 
   // --- ADMIN PRODUCTS LIST, SEARCH & FILTERS (Secciones 1, 28, 29) ---
   function openCreateProductModal() {
     document.getElementById('productFormModalTitle').textContent = 'Nuevo Producto';
     document.getElementById('editProductId').value = '';
-    document.getElementById('pinImageInput').value = '';
+    resetProductImageState('', []);
     document.getElementById('pinNameInput').value = '';
     document.getElementById('pinPriceInput').value = '';
+    document.getElementById('pinStockInput').disabled = false;
     document.getElementById('pinStockInput').value = '10';
+    document.getElementById('pinStockLabel').textContent = 'Stock Físico Inicial *';
     document.getElementById('pinSkuInput').value = '';
     document.getElementById('pinPromoPriceInput').value = '';
     document.getElementById('pinCostPriceInput').value = '';
@@ -1982,8 +2153,11 @@
     document.getElementById('pinPromoPriceInput').value = p.promoPrice || '';
     document.getElementById('pinCostPriceInput').value = p.costPrice || 0;
     document.getElementById('pinStockInput').value = p.stock || 0;
+    document.getElementById('pinStockInput').disabled = true;
+    document.getElementById('pinStockLabel').textContent = 'Stock actual (usar Ajustar Stock)';
+    document.getElementById('stockQuickButtons')?.classList.add('hidden');
     document.getElementById('pinMinStockInput').value = p.minStock || 3;
-    document.getElementById('pinImageInput').value = p.image || '';
+    resetProductImageState(p.image || '', p.galleryImages || []);
     document.getElementById('pinDescriptionInput').value = p.description || '';
     document.getElementById('pinFeaturedInput').checked = Boolean(p.featured);
     document.getElementById('pinActiveInput').value = p.active ? '1' : '0';
@@ -1994,20 +2168,15 @@
     document.getElementById('mockupCardCategory').textContent = p.category;
     document.getElementById('mockupCardPrice').textContent = formatPrice(p.promoPrice || p.price);
 
-    // Image preview
-    if (p.image) {
-      document.getElementById('prodImagePreviewImg').src = p.image;
-      document.getElementById('prodImagePreviewContainer').classList.remove('hidden');
-      document.getElementById('imageUploadStatus').innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span> <span>Foto cargada</span>`;
-    } else {
-      document.getElementById('prodImagePreviewContainer').classList.add('hidden');
-    }
+    document.getElementById('imageUploadStatus').innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span> <span>Foto cargada</span>`;
 
     document.getElementById('productFormModal').classList.remove('hidden');
     refreshLucide();
   }
 
-  function closeProductFormModal() {
+  async function closeProductFormModal() {
+    await cleanupUnsavedUploads([]);
+    productFormNewUploads.clear();
     document.getElementById('productFormModal').classList.add('hidden');
   }
 
@@ -2769,8 +2938,8 @@
     if (!authToken) return;
 
     const newPassword = document.getElementById('adminNewPasswordInput').value;
-    if (!newPassword || newPassword.length < 6) {
-      showToast('La contraseña debe tener mínimo 6 caracteres', 'warning');
+    if (!newPassword || newPassword.length < 12) {
+      showToast('La contraseña debe tener mínimo 12 caracteres', 'warning');
       return;
     }
 

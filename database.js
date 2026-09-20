@@ -115,6 +115,49 @@ function sanitizeString(str, maxLen = 255) {
     .substring(0, maxLen);
 }
 
+function normalizeProductImageUrl(value, required = false) {
+  const url = typeof value === 'string' ? value.trim() : '';
+  if (!url) {
+    if (required) throw new Error('La imagen principal del producto es obligatoria.');
+    return '';
+  }
+  if (url.length > 2048) throw new Error('URL de imagen inválida.');
+  if (/^(javascript|file|vbscript):/i.test(url)) throw new Error('URL de imagen no permitida.');
+  if (/^https:\/\//i.test(url)) return url;
+  const local = url.replace(/^\//, '');
+  if (local.startsWith('images/') && !local.includes('..') && /^[A-Za-z0-9_./-]+$/.test(local)) {
+    return url.startsWith('/') ? `/${local}` : local;
+  }
+  throw new Error('La imagen debe provenir del almacenamiento PINPOP o usar una URL HTTPS válida.');
+}
+
+function normalizeGalleryImages(values, mainImage = '') {
+  if (values === undefined || values === null) return [];
+  if (!Array.isArray(values)) throw new Error('La galería de imágenes es inválida.');
+  const normalized = [];
+  for (const value of values.slice(0, 4)) {
+    const url = normalizeProductImageUrl(value, true);
+    if (url !== mainImage && !normalized.includes(url)) normalized.push(url);
+  }
+  return normalized;
+}
+
+const DEFAULT_WHATSAPP_NUMBER = '595991950031';
+const LEGACY_PLACEHOLDER_WHATSAPP = '595981234567';
+
+function normalizeParaguayWhatsapp(value) {
+  let digits = String(value || '').replace(/\D/g, '');
+  // International +595 must not include the domestic trunk prefix 0.
+  if (digits.startsWith('5950')) digits = '595' + digits.slice(4);
+  // Domestic format 09XX... -> +595 9XX...
+  if (digits.startsWith('0') && digits.length === 10) digits = '595' + digits.slice(1);
+  if (digits.startsWith('9') && digits.length === 9) digits = '595' + digits;
+  if (!/^5959\d{8}$/.test(digits)) {
+    throw new Error('Número de WhatsApp inválido. Use un celular paraguayo, por ejemplo +595 991 950 031.');
+  }
+  return digits;
+}
+
 async function initDatabase() {
   if (isPostgres) {
     const { Pool } = require('pg');
@@ -275,14 +318,13 @@ async function initDatabase() {
     } catch (e) {}
   }
 
-  // Seed default admin if empty. In production/serverless, never invent a default password.
+  // Seed admin only when an explicit password is configured. Never invent a default credential.
   const adminExists = await queryOne('SELECT * FROM admin_users WHERE username = ?', ['admin']);
   if (!adminExists) {
-    const productionLike = process.env.NODE_ENV === 'production' || process.env.NETLIFY === 'true';
-    if (productionLike && !process.env.ADMIN_PASSWORD) {
-      console.warn('⚠️ Admin no creado: ADMIN_PASSWORD no está configurado en producción.');
+    const adminPassword = process.env.ADMIN_PASSWORD || '';
+    if (adminPassword.length < 12) {
+      console.warn('⚠️ Admin no creado: configure ADMIN_PASSWORD con al menos 12 caracteres.');
     } else {
-      const adminPassword = process.env.ADMIN_PASSWORD || 'pinpop2026';
       const hash = bcrypt.hashSync(adminPassword, 10);
       await runSql(
         'INSERT INTO admin_users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)',
@@ -329,7 +371,7 @@ async function initDatabase() {
     const defaultSettings = {
       storeName: 'PINPOP',
       tagline: 'Pins para tus Crocs • Dale onda a tus calzados ✨',
-      whatsappNumber: '595981234567',
+      whatsappNumber: DEFAULT_WHATSAPP_NUMBER,
       deliveryFee: 15000,
       freeDeliveryThreshold: 100000,
       promoBanner: '¡Dale personalidad a tus Crocs! ✨ Elegí tus pins favoritos. Envíos en el día a todo el país 🛵'
@@ -343,6 +385,24 @@ async function initDatabase() {
       } else {
         await runSql('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, JSON.stringify(val)]);
       }
+    }
+  }
+
+  // Migrate the old demo WhatsApp placeholder without overwriting a real custom number.
+  const whatsappSetting = await queryOne('SELECT value FROM settings WHERE key = ?', ['whatsappNumber']);
+  let currentWhatsapp = null;
+  if (whatsappSetting) {
+    try { currentWhatsapp = JSON.parse(whatsappSetting.value); }
+    catch (_) { currentWhatsapp = whatsappSetting.value; }
+  }
+  if (!currentWhatsapp || String(currentWhatsapp).replace(/\D/g, '') === LEGACY_PLACEHOLDER_WHATSAPP) {
+    if (isPostgres) {
+      await runSql(
+        'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value',
+        ['whatsappNumber', JSON.stringify(DEFAULT_WHATSAPP_NUMBER)]
+      );
+    } else {
+      await runSql('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', ['whatsappNumber', JSON.stringify(DEFAULT_WHATSAPP_NUMBER)]);
     }
   }
 
@@ -732,6 +792,36 @@ async function getPublicProducts() {
   });
 }
 
+async function getPublicProductById(id) {
+  const p = await queryOne(`
+    SELECT id, sku, name, category, target_type, price, promo_price, stock, image, description, badge, active, featured, gallery_images, updated_at
+    FROM products
+    WHERE id = ? AND (active = 1 OR active = true)
+  `, [id]);
+  if (!p) return null;
+  let gallery = [];
+  try { gallery = JSON.parse(p.gallery_images || '[]'); } catch (_) {}
+  return {
+    ...p,
+    targetType: p.target_type || 'crocs',
+    promoPrice: p.promo_price,
+    active: Boolean(p.active),
+    featured: Boolean(p.featured),
+    galleryImages: gallery,
+    updatedAt: p.updated_at
+  };
+}
+
+async function getSeoProducts() {
+  const rows = await queryAll(`
+    SELECT id, name, updated_at
+    FROM products
+    WHERE active = 1 OR active = true
+    ORDER BY updated_at DESC, id ASC
+  `);
+  return rows.map(r => ({ id: r.id, name: r.name, updatedAt: r.updated_at }));
+}
+
 async function getPublicSettings() {
   const rows = await queryAll('SELECT key, value FROM settings');
   const out = {};
@@ -870,7 +960,7 @@ async function createOrderSecure({ customer, items }) {
   if (safePayment) msg += `\n💳 *Pago:* ${safePayment}`;
   if (safeNotes) msg += `\n📝 *Nota:* ${safeNotes}`;
 
-  const rawPhone = String(settings.whatsappNumber || '595981234567').replace(/\D/g, '');
+  const rawPhone = String(settings.whatsappNumber || DEFAULT_WHATSAPP_NUMBER).replace(/\D/g, '');
   const whatsappUrl = `https://wa.me/${rawPhone}?text=${encodeURIComponent(msg)}`;
 
   return {
@@ -947,17 +1037,25 @@ async function createProductAdmin(data) {
   const price = Number(data.price);
   if (isNaN(price) || price < 0) throw new Error('El precio del producto debe ser mayor o igual a 0.');
 
-  const stock = Math.max(0, parseInt(data.stock, 10) || 0);
-  const minStock = Math.max(0, parseInt(data.minStock, 10) || 3);
-  const costPrice = Math.max(0, Number(data.costPrice) || 0);
-  const promoPrice = data.promoPrice ? Math.max(0, Number(data.promoPrice)) : null;
+  const parsedStock = Number(data.stock ?? 0);
+  const parsedMinStock = Number(data.minStock ?? 3);
+  const parsedCost = Number(data.costPrice ?? 0);
+  const parsedPromo = data.promoPrice === null || data.promoPrice === undefined || data.promoPrice === '' ? null : Number(data.promoPrice);
+  if (!Number.isInteger(parsedStock) || parsedStock < 0) throw new Error('El stock debe ser un entero mayor o igual a 0.');
+  if (!Number.isFinite(parsedMinStock) || parsedMinStock < 0) throw new Error('El stock mínimo debe ser mayor o igual a 0.');
+  if (!Number.isFinite(parsedCost) || parsedCost < 0) throw new Error('El costo debe ser mayor o igual a 0.');
+  if (parsedPromo !== null && (!Number.isFinite(parsedPromo) || parsedPromo < 0)) throw new Error('El precio promocional es inválido.');
+  const stock = parsedStock;
+  const minStock = Math.trunc(parsedMinStock);
+  const costPrice = parsedCost;
+  const promoPrice = parsedPromo;
   const targetType = data.targetType === 'estetoscopio' ? 'estetoscopio' : 'crocs';
   const category = sanitizeString(data.category, 60) || (targetType === 'estetoscopio' ? 'Cardiología' : 'Personajes');
   const badge = sanitizeString(data.badge, 50);
   const description = sanitizeString(data.description, 500);
   const featured = data.featured ? 1 : 0;
-  const image = data.image && typeof data.image === 'string' ? data.image.trim() : '/images/pins/estetoscopio-pin.png';
-  const galleryImages = Array.isArray(data.galleryImages) ? JSON.stringify(data.galleryImages) : '[]';
+  const image = normalizeProductImageUrl(data.image, true);
+  const galleryImages = JSON.stringify(normalizeGalleryImages(data.galleryImages || [], image));
   const id = randomId('pin');
 
   let sku = data.sku ? sanitizeString(data.sku, 30).toUpperCase().replace(/\s+/g, '-') : '';
@@ -1020,8 +1118,23 @@ async function updateProductAdmin(id, data) {
     if (existing) throw new Error(`El código SKU "${sku}" ya pertenece a otro producto.`);
   }
 
-  const galleryImages = data.galleryImages !== undefined 
-    ? (Array.isArray(data.galleryImages) ? JSON.stringify(data.galleryImages) : data.galleryImages)
+  const nextName = data.name !== undefined ? sanitizeString(data.name, 150) : current.name;
+  if (!nextName) throw new Error('El nombre del producto es obligatorio.');
+  const nextPrice = data.price !== undefined ? Number(data.price) : Number(current.price);
+  const nextPromo = data.promoPrice !== undefined
+    ? (data.promoPrice === null || data.promoPrice === '' ? null : Number(data.promoPrice))
+    : current.promo_price;
+  const nextCost = data.costPrice !== undefined ? Number(data.costPrice) : Number(current.cost_price || 0);
+  const nextMinStock = data.minStock !== undefined ? Number(data.minStock) : Number(current.min_stock || 0);
+  if (!Number.isFinite(nextPrice) || nextPrice < 0) throw new Error('El precio debe ser mayor o igual a 0.');
+  if (nextPromo !== null && (!Number.isFinite(nextPromo) || nextPromo < 0)) throw new Error('El precio promocional es inválido.');
+  if (!Number.isFinite(nextCost) || nextCost < 0) throw new Error('El costo debe ser mayor o igual a 0.');
+  if (!Number.isFinite(nextMinStock) || nextMinStock < 0) throw new Error('El stock mínimo debe ser mayor o igual a 0.');
+  const nextImage = data.image !== undefined
+    ? (data.image === current.image ? current.image : normalizeProductImageUrl(data.image, true))
+    : current.image;
+  const galleryImages = data.galleryImages !== undefined
+    ? JSON.stringify(normalizeGalleryImages(data.galleryImages, nextImage))
     : current.gallery_images;
 
   await runSql(
@@ -1044,14 +1157,14 @@ async function updateProductAdmin(id, data) {
     WHERE id = ?`,
     [
       sku,
-      data.name !== undefined ? sanitizeString(data.name, 150) : current.name,
+      nextName,
       data.category !== undefined ? sanitizeString(data.category, 60) : current.category,
       data.targetType !== undefined ? (data.targetType === 'estetoscopio' ? 'estetoscopio' : 'crocs') : (current.target_type || 'crocs'),
-      data.price !== undefined ? Number(data.price) : current.price,
-      data.promoPrice !== undefined ? (data.promoPrice ? Number(data.promoPrice) : null) : current.promo_price,
-      data.costPrice !== undefined ? Number(data.costPrice) : current.cost_price,
-      data.minStock !== undefined ? Number(data.minStock) : current.min_stock,
-      data.image !== undefined ? data.image : current.image,
+      nextPrice,
+      nextPromo,
+      nextCost,
+      Math.trunc(nextMinStock),
+      nextImage,
       data.description !== undefined ? sanitizeString(data.description, 500) : current.description,
       data.badge !== undefined ? sanitizeString(data.badge, 50) : current.badge,
       data.active !== undefined ? (data.active ? 1 : 0) : current.active,
@@ -1142,6 +1255,36 @@ async function getCategories(targetType = null) {
   }
   sql += ' ORDER BY name ASC';
   return await queryAll(sql, params);
+}
+
+async function getAllCategoriesAdmin() {
+  return await queryAll('SELECT id, name, target_type as "targetType", active, created_at as "createdAt" FROM categories ORDER BY active DESC, target_type ASC, name ASC');
+}
+
+async function updateCategoryAdmin(id, { name, targetType, active }) {
+  const current = await queryOne('SELECT * FROM categories WHERE id = ?', [id]);
+  if (!current) throw new Error('Categoría no encontrada.');
+  const safeName = name !== undefined ? sanitizeString(name, 50) : current.name;
+  if (!safeName) throw new Error('El nombre de la categoría es obligatorio.');
+  const type = targetType !== undefined ? (targetType === 'estetoscopio' ? 'estetoscopio' : 'crocs') : current.target_type;
+  const duplicate = await queryOne('SELECT id FROM categories WHERE LOWER(name) = LOWER(?) AND target_type = ? AND id != ?', [safeName, type, id]);
+  if (duplicate) throw new Error(`Ya existe una categoría llamada "${safeName}" en esa línea.`);
+  const activeValue = active !== undefined ? (active ? 1 : 0) : current.active;
+  await runSql('UPDATE categories SET name = ?, target_type = ?, active = ? WHERE id = ?', [safeName, type, activeValue, id]);
+  // Keep existing products consistent when a category is renamed.
+  if (safeName !== current.name || type !== current.target_type) {
+    await runSql('UPDATE products SET category = ?, target_type = ?, updated_at = ? WHERE category = ? AND target_type = ?', [safeName, type, new Date().toISOString(), current.name, current.target_type]);
+  }
+  persistDb();
+  return await queryOne('SELECT id, name, target_type as "targetType", active FROM categories WHERE id = ?', [id]);
+}
+
+async function activateCategoryAdmin(id) {
+  const current = await queryOne('SELECT id FROM categories WHERE id = ?', [id]);
+  if (!current) throw new Error('Categoría no encontrada.');
+  await runSql('UPDATE categories SET active = 1 WHERE id = ?', [id]);
+  persistDb();
+  return { success: true, id };
 }
 
 async function createCategoryAdmin({ name, targetType = 'crocs' }) {
@@ -1441,8 +1584,9 @@ async function getStatsAdmin() {
 }
 
 async function updateSettingsAdmin(newSettings) {
-  for (const [key, val] of Object.entries(newSettings)) {
+  for (const [key, originalVal] of Object.entries(newSettings)) {
     if (key !== 'adminPassword' && key !== 'jwtSecret') {
+      const val = key === 'whatsappNumber' ? normalizeParaguayWhatsapp(originalVal) : originalVal;
       if (isPostgres) {
         await runSql(
           'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value',
@@ -1460,6 +1604,8 @@ async function updateSettingsAdmin(newSettings) {
 module.exports = {
   initDatabase,
   getPublicProducts,
+  getPublicProductById,
+  getSeoProducts,
   getPublicSettings,
   createOrderSecure,
   verifyAdminPassword,
@@ -1478,6 +1624,9 @@ module.exports = {
   getStatsAdmin,
   updateSettingsAdmin,
   getCategories,
+  getAllCategoriesAdmin,
   createCategoryAdmin,
+  updateCategoryAdmin,
+  activateCategoryAdmin,
   deleteCategoryAdmin
 };

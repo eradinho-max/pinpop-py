@@ -82,3 +82,36 @@ Abrí estas URLs en el navegador reemplazando `TU-SITIO`:
 - `https://TU-SITIO.netlify.app/api/products` → debe devolver una lista JSON de productos.
 
 Si `/api/health` o `/api/products` devuelve error, revisá **Deploys > Functions > api > Logs** en Netlify.
+
+## Variables obligatorias para la versión actual
+
+En **Netlify → Site configuration → Environment variables** configurar como mínimo:
+
+```text
+DATABASE_URL=...              # Supabase Transaction Pooler / PostgreSQL
+JWT_SECRET=...                # mínimo 32 caracteres de alta entropía
+ADMIN_PASSWORD=...            # mínimo 12 caracteres
+SITE_URL=https://tu-dominio  # URL pública sin barra final
+SUPABASE_URL=...
+SUPABASE_SERVICE_ROLE_KEY=... # solo backend/Netlify; nunca frontend
+SUPABASE_BUCKET=pins-images
+```
+
+Opcional:
+
+```text
+ALLOWED_ORIGINS=https://otro-dominio-autorizado
+PG_POOL_MAX=1
+```
+
+El WhatsApp comercial predeterminado es **+595 991 950 031** (`595991950031` para `wa.me`). Puede modificarse luego desde el panel Admin.
+
+Después del deploy comprobar:
+
+- `/api/health`
+- `/api/products`
+- `/robots.txt`
+- `/sitemap.xml`
+- `/llms.txt`
+
+Para probar el Admin de imágenes, las variables de Supabase Storage deben estar configuradas. La service-role key nunca debe incluirse en `public/`, JavaScript del navegador ni repositorio público.

@@ -14,7 +14,7 @@ const fallbackData = require('./fallback-data');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const isNetlifyRuntime = process.env.NETLIFY === 'true';
+const isVercelRuntime = process.env.VERCEL === '1' || Boolean(process.env.VERCEL_ENV);
 
 // Trust reverse proxy (Vercel, Railway, Render, Cloudflare, Nginx)
 app.set('trust proxy', 1);
@@ -22,7 +22,7 @@ app.set('trust proxy', 1);
 // ==========================================
 // SIMPLE ADMIN SECURITY: PASSWORD + TOTP + HTTPONLY COOKIE
 // ==========================================
-const isProduction = process.env.NODE_ENV === 'production' || process.env.NETLIFY === 'true';
+const isProduction = process.env.NODE_ENV === 'production' || isVercelRuntime;
 const configuredAdminPassword = process.env.ADMIN_PASSWORD || '';
 const adminPasswordReady = configuredAdminPassword.length >= 12;
 const SESSION_COOKIE = 'pinpop_admin_session';
@@ -175,9 +175,9 @@ app.use(cors((req, callback) => {
   const forwardedProto = req.get('x-forwarded-proto') || req.protocol || 'https';
   const host = req.get('host');
   const sameOrigin = host ? `${forwardedProto}://${host}` : null;
-  const platformOrigins = [process.env.URL, process.env.DEPLOY_PRIME_URL, process.env.SITE_URL]
+  const platformOrigins = [process.env.SITE_URL, process.env.VERCEL_PROJECT_PRODUCTION_URL, process.env.VERCEL_URL]
     .filter(Boolean)
-    .map(v => String(v).replace(/\/$/, ''));
+    .map(v => { const raw = String(v).replace(/\/$/, ''); return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`; });
   const allow = new Set([...configuredOrigins, ...platformOrigins, sameOrigin].filter(Boolean));
 
   if (allow.has(origin.replace(/\/$/, ''))) {
@@ -249,8 +249,8 @@ function escapeHtmlServer(value) {
 }
 
 function getSiteBaseUrl(req) {
-  const configured = process.env.SITE_URL || process.env.URL;
-  if (configured) return String(configured).replace(/\/$/, '');
+  const configured = process.env.SITE_URL || process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL;
+  if (configured) { const raw = String(configured).replace(/\/$/, ''); return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`; }
   const proto = req.get('x-forwarded-proto') || req.protocol || 'https';
   return `${proto}://${req.get('host')}`.replace(/\/$/, '');
 }
@@ -324,10 +324,10 @@ app.get('/api/health', async (req, res) => {
   }
   res.status(200).json({
     ok: true,
-    runtime: isNetlifyRuntime ? 'netlify' : 'node',
-    database: isNetlifyRuntime ? 'netlify-blobs' : 'memory-dev',
+    runtime: isVercelRuntime ? 'vercel' : 'node',
+    database: isVercelRuntime ? 'vercel-blob' : 'memory-dev',
     databaseHealthy,
-    publicCatalogSource: databaseHealthy ? 'netlify-blobs' : 'bundled-readonly-fallback',
+    publicCatalogSource: databaseHealthy ? 'vercel-blob' : 'bundled-readonly-fallback',
     adminConfigured: adminPasswordReady && databaseHealthy,
     totpConfigured,
     databaseError: databaseHealthy ? null : databaseError
@@ -338,7 +338,7 @@ async function publicDataOrFallback(dbGetter, fallbackValue, res, label) {
   try {
     await ensureDatabaseReady();
     const value = await dbGetter();
-    res.setHeader('X-PINPOP-Data-Source', 'netlify-blobs');
+    res.setHeader('X-PINPOP-Data-Source', 'vercel-blob');
     return value;
   } catch (err) {
     console.error(`PINPOP ${label} storage fallback:`, err.message);
@@ -513,26 +513,69 @@ app.get('/api/auth/setup-status', loginLimiter, async (req, res) => {
 
 app.post('/api/auth/setup/start', loginLimiter, async (req, res) => {
   if (!adminPasswordReady) {
-    return res.status(503).json({ error: 'Configure ADMIN_PASSWORD en Netlify antes del primer acceso.' });
+    return res.status(503).json({ error: 'Configure ADMIN_PASSWORD en Vercel antes del primer acceso.' });
   }
+
   const { password } = req.body || {};
-  if (!password) return res.status(400).json({ error: 'La contraseña es obligatoria.' });
+
+  if (!password) {
+    return res.status(400).json({ error: 'La contraseña es obligatoria.' });
+  }
+
   if (!timingSafeTextEqual(password, configuredAdminPassword)) {
     return res.status(401).json({ error: 'Contraseña incorrecta.' });
   }
+
   try {
     await ensureDatabaseReady();
+
     const fingerprint = adminPasswordFingerprint();
     const status = await db.syncAdminSecurity(fingerprint);
-    if (status.totpEnabled) return res.status(409).json({ error: 'El 2FA ya está configurado. Inicie sesión normalmente.' });
+
+    // TOTP already enrolled: do not expose any secret.
+    if (status.totpEnabled) {
+      return res.json({
+        setupRequired: false,
+        totpRequired: true
+      });
+    }
+
+    // First enrollment.
     const secret = generateTotpSecret();
     await db.beginAdminTotpSetup(fingerprint, secret);
-    const otpauthUri = `otpauth://totp/${encodeURIComponent('PINPOP:admin')}?secret=${secret}&issuer=${encodeURIComponent('PINPOP')}&algorithm=SHA1&digits=6&period=30`;
-    const qrDataUrl = await QRCode.toDataURL(otpauthUri, { width: 240, margin: 1, errorCorrectionLevel: 'M' });
-    return res.json({ setupRequired: true, qrDataUrl, manualKey: secret, account: 'PINPOP:admin' });
+
+    const otpauthUri =
+      `otpauth://totp/${encodeURIComponent('PINPOP:admin')}` +
+      `?secret=${secret}` +
+      `&issuer=${encodeURIComponent('PINPOP')}` +
+      `&algorithm=SHA1&digits=6&period=30`;
+
+    let qrDataUrl = '';
+
+    try {
+      qrDataUrl = await QRCode.toDataURL(otpauthUri, {
+        width: 280,
+        margin: 2,
+        errorCorrectionLevel: 'M'
+      });
+    } catch (qrErr) {
+      // Enrollment can continue with the manual secret even if QR rendering fails.
+      console.warn('PINPOP QR generation warning:', qrErr.message);
+    }
+
+    return res.json({
+      setupRequired: true,
+      totpRequired: false,
+      qrDataUrl,
+      manualKey: secret,
+      otpauthUri,
+      account: 'PINPOP:admin'
+    });
   } catch (err) {
     console.error('PINPOP 2FA setup start error:', err.message);
-    return res.status(503).json({ error: 'No se pudo iniciar la configuración 2FA.' });
+    return res.status(503).json({
+      error: 'No se pudo iniciar la configuración 2FA. Intentá nuevamente.'
+    });
   }
 });
 
@@ -561,7 +604,7 @@ app.post('/api/auth/setup/confirm', loginLimiter, async (req, res) => {
 
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
   if (!adminPasswordReady) {
-    return res.status(503).json({ error: 'Admin no configurado. Defina ADMIN_PASSWORD en Netlify.' });
+    return res.status(503).json({ error: 'Admin no configurado. Defina ADMIN_PASSWORD en Vercel.' });
   }
   const { password, totp } = req.body || {};
   if (!password || !totp) return res.status(400).json({ error: 'Contraseña y código 2FA son obligatorios.' });
@@ -597,7 +640,7 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 // ==========================================
-// PERSISTENCE GUARD — Netlify Blobs
+// PERSISTENCE GUARD — Vercel Blobs
 // ==========================================
 async function requirePersistentDatabase(req, res, next) {
   try {
@@ -852,10 +895,10 @@ app.put('/api/admin/settings', authenticateAdmin, requirePersistentDatabase, asy
 
 // Admin: Change password
 app.post('/api/admin/change-password', authenticateAdmin, (req, res) => {
-  res.status(409).json({ error: 'La contraseña se administra en Netlify mediante ADMIN_PASSWORD. Cambie la variable y haga un nuevo deploy.' });
+  res.status(409).json({ error: 'La contraseña se administra en Vercel mediante ADMIN_PASSWORD. Cambie la variable y haga un nuevo deploy.' });
 });
 
-// Public media stored in Netlify Blobs. Long cache because every upload uses a unique key.
+// Public media stored in Vercel Blobs. Long cache because every upload uses a unique key.
 app.get('/api/media/:id', async (req, res) => {
   try {
     const media = await imageStorage.getImageById(req.params.id);

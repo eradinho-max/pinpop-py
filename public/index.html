@@ -28,9 +28,9 @@
   <link rel="icon" type="image/png" href="images/brand/pinpop-logo-web.png">
 
   <!-- CSS e íconos locales: sin dependencias CDN en el camino crítico. -->
-  <link rel="stylesheet" href="tailwind-built.css">
-  <link rel="stylesheet" href="style.css">
-  <script src="vendor/icons.js"></script>
+  <link rel="stylesheet" href="tailwind-built.css?v=2.2.2">
+  <link rel="stylesheet" href="style.css?v=2.2.2">
+  <script src="vendor/icons.js?v=2.2.2"></script>
 </head>
 <body class="bg-[#F4F5F7] text-[#111111] font-sans min-h-screen flex flex-col antialiased selection:bg-[#FF2D8A] selection:text-white">
 
@@ -730,7 +730,7 @@
         <img src="images/brand/pinpop-logo-web.png" class="h-12 w-auto object-contain mx-auto">
         <div>
           <h3 id="adminAuthTitle" class="font-display font-black text-lg text-slate-900">Acceso Administrativo</h3>
-          <p id="adminAuthDescription" class="text-xs text-slate-500 mt-1">Ingresá tu contraseña y el código de 6 dígitos del autenticador.</p>
+          <p id="adminAuthDescription" class="text-xs text-slate-500 mt-1">Ingresá tu contraseña para continuar.</p>
         </div>
         <form id="adminLoginForm" class="space-y-3">
           <input 
@@ -743,20 +743,19 @@
           <input
             type="text"
             id="adminTotpInput"
-            required
             inputmode="numeric"
             autocomplete="one-time-code"
             maxlength="6"
             pattern="[0-9]{6}"
             placeholder="Código 2FA (6 dígitos)"
-            class="w-full px-3.5 py-2.5 text-xs tracking-[0.3em] text-center font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25 focus:border-[#FF2D8A]"
+            class="hidden w-full px-3.5 py-2.5 text-xs tracking-[0.3em] text-center font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25 focus:border-[#FF2D8A]"
           />
           <button 
             id="adminLoginSubmitBtn"
             type="submit" 
             class="btn-pinpop-primary w-full py-2.5 font-black text-xs rounded-xl shadow"
           >
-            Ingresar al Panel
+            Continuar
           </button>
         </form>
 
@@ -768,6 +767,7 @@
               <p class="text-[10px] text-slate-500 mb-1">Escaneá el QR con Google Authenticator o Microsoft Authenticator.</p>
               <p class="text-[10px] text-slate-500">Si no podés escanear, usá esta clave:</p>
               <code id="admin2faManualKey" class="block mt-1 px-2 py-2 rounded-lg bg-white border border-slate-200 text-[11px] font-bold tracking-wider break-all text-slate-800"></code>
+              <a id="admin2faOpenLink" class="hidden inline-block mt-2 text-[11px] font-black text-[#FF2D8A] underline underline-offset-2" href="#">Abrir en el autenticador</a>
             </div>
           </div>
           <input
@@ -1118,7 +1118,7 @@
           <!-- Security configuration -->
           <div class="border-t border-slate-200 pt-6">
             <h4 class="font-display font-black text-sm text-slate-900 mb-2">Seguridad del acceso</h4>
-            <p class="text-xs text-slate-500 leading-relaxed">La contraseña y el 2FA se administran en las variables protegidas del Netlify. El panel no guarda ni muestra esas credenciales.</p>
+            <p class="text-xs text-slate-500 leading-relaxed">La contraseña y el 2FA se administran en las variables protegidas de Vercel. El panel no guarda ni muestra esas credenciales.</p>
           </div>
         </div>
 
@@ -1608,6 +1608,6 @@
   </footer>
 
   <!-- Application Logic -->
-  <script src="app.js"></script>
+  <script src="app.js?v=2.2.2"></script>
 </body>
 </html>

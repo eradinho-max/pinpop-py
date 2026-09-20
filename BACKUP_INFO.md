@@ -1,15 +1,7 @@
-# PINPOP — Backup geral v2.2.1
+# Backup PINPOP v2.3.0 — Vercel
 
-Este ZIP é o backup completo do projeto após simplificação final do Admin.
+Este é o backup completo para continuidade em outro chat ou repositório GitHub.
 
-## Para continuar em outro chat
+Arquitetura-alvo: GitHub → Vercel + Vercel Blob privado.
 
-Informar que a arquitetura oficial é:
-
-- Netlify Functions
-- Netlify Blobs para dados e imagens
-- `ADMIN_PASSWORD` como única variável administrativa obrigatória
-- 2FA TOTP criado automaticamente no primeiro acesso via QR Code
-- cookie HttpOnly para sessão
-
-Não reintroduzir Supabase, PostgreSQL, `DATABASE_URL`, `JWT_SECRET` ou `ADMIN_TOTP_SECRET` sem necessidade explícita.
+Não contém `.env`, senha administrativa nem tokens.

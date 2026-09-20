@@ -30,7 +30,7 @@
 
   // Admin session is held in a secure HttpOnly cookie; JS only tracks UI state.
   let authToken = false;
-  let adminSetupRequired = false;
+  let adminAuthStage = 'password'; // password | totp | setup
   let pendingSetupPassword = '';
   let adminOrders = [];
   let isUploadingPhoto = false;
@@ -2482,80 +2482,138 @@
   // --- ADMIN AUTH & CONTROL PANEL ---
   function resetAdmin2faSetupView() {
     pendingSetupPassword = '';
+    adminAuthStage = 'password';
     const form = document.getElementById('adminLoginForm');
     const setup = document.getElementById('admin2faSetupSection');
     const setupCode = document.getElementById('admin2faSetupCodeInput');
     const qr = document.getElementById('admin2faQrImage');
     const manual = document.getElementById('admin2faManualKey');
+    const openLink = document.getElementById('admin2faOpenLink');
+    const password = document.getElementById('adminPasswordInput');
+    const totp = document.getElementById('adminTotpInput');
+    const title = document.getElementById('adminAuthTitle');
+    const description = document.getElementById('adminAuthDescription');
+    const submit = document.getElementById('adminLoginSubmitBtn');
+
     if (form) form.classList.remove('hidden');
     if (setup) setup.classList.add('hidden');
     if (setupCode) setupCode.value = '';
-    if (qr) { qr.src = ''; qr.classList.add('hidden'); }
+    if (qr) { qr.removeAttribute('src'); qr.classList.add('hidden'); }
     if (manual) manual.textContent = '';
+    if (openLink) { openLink.removeAttribute('href'); openLink.classList.add('hidden'); }
+
+    if (password) {
+      password.disabled = false;
+      password.required = true;
+      password.classList.remove('hidden');
+      password.value = '';
+    }
+
+    if (totp) {
+      totp.required = false;
+      totp.classList.add('hidden');
+      totp.value = '';
+    }
+
+    if (title) title.textContent = 'Acceso Administrativo';
+    if (description) description.textContent = 'Ingresá tu contraseña para continuar.';
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = 'Continuar';
+    }
   }
 
-  function applyAdminAuthMode(data = {}) {
+  function showAdminTotpLoginStep(passwordValue) {
+    adminAuthStage = 'totp';
+    pendingSetupPassword = passwordValue;
+
     const title = document.getElementById('adminAuthTitle');
     const description = document.getElementById('adminAuthDescription');
     const password = document.getElementById('adminPasswordInput');
     const totp = document.getElementById('adminTotpInput');
     const submit = document.getElementById('adminLoginSubmitBtn');
-    resetAdmin2faSetupView();
 
-    if (!data.passwordConfigured) {
-      adminSetupRequired = true;
-      if (title) title.textContent = 'Configuración pendiente';
-      if (description) description.textContent = 'Definí ADMIN_PASSWORD en Netlify y hacé un nuevo deploy. Es la única variable obligatoria.';
-      if (totp) { totp.classList.add('hidden'); totp.required = false; }
-      if (password) password.disabled = true;
-      if (submit) { submit.disabled = true; submit.textContent = 'Falta ADMIN_PASSWORD'; }
-      return;
+    if (title) title.textContent = 'Verificación en dos pasos';
+    if (description) description.textContent = 'Abrí tu autenticador e ingresá el código de 6 dígitos.';
+
+    if (password) {
+      password.required = false;
+      password.disabled = true;
+      password.classList.add('hidden');
     }
 
-    if (password) password.disabled = false;
-    adminSetupRequired = Boolean(data.setupRequired);
-    if (adminSetupRequired) {
-      if (title) title.textContent = 'Primer acceso';
-      if (description) description.textContent = 'Ingresá tu contraseña. El sitio va a generar el QR Code del 2FA automáticamente.';
-      if (totp) { totp.classList.add('hidden'); totp.required = false; totp.value = ''; }
-      if (submit) { submit.disabled = false; submit.textContent = 'Configurar 2FA'; }
-    } else {
-      if (title) title.textContent = 'Acceso Administrativo';
-      if (description) description.textContent = 'Ingresá tu contraseña y el código de 6 dígitos del autenticador.';
-      if (totp) { totp.classList.remove('hidden'); totp.required = true; }
-      if (submit) { submit.disabled = false; submit.textContent = 'Ingresar al Panel'; }
+    if (totp) {
+      totp.classList.remove('hidden');
+      totp.required = true;
+      totp.focus();
     }
+
+    if (submit) submit.textContent = 'Ingresar al Panel';
   }
 
-  async function refreshAdminAuthMode() {
-    try {
-      const res = await fetch('/api/auth/setup-status', { cache: 'no-store' });
-      const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
-      if (!res.ok || !data) throw new Error(data?.error || 'No se pudo verificar la configuración administrativa.');
-      applyAdminAuthMode(data);
-    } catch (err) {
-      console.error('Error verificando configuración 2FA:', err);
-      showToast(err.message || 'No se pudo verificar la configuración administrativa.', 'error');
+  function showAdmin2faSetup(data, passwordValue) {
+    adminAuthStage = 'setup';
+    pendingSetupPassword = passwordValue;
+
+    const form = document.getElementById('adminLoginForm');
+    const setup = document.getElementById('admin2faSetupSection');
+    const qr = document.getElementById('admin2faQrImage');
+    const manual = document.getElementById('admin2faManualKey');
+    const openLink = document.getElementById('admin2faOpenLink');
+
+    if (form) form.classList.add('hidden');
+    if (setup) setup.classList.remove('hidden');
+
+    if (qr && data.qrDataUrl) {
+      qr.src = data.qrDataUrl;
+      qr.classList.remove('hidden');
+    } else if (qr) {
+      qr.removeAttribute('src');
+      qr.classList.add('hidden');
     }
+
+    if (manual) manual.textContent = data.manualKey || '';
+
+    if (openLink && data.otpauthUri) {
+      openLink.href = data.otpauthUri;
+      openLink.classList.remove('hidden');
+    }
+
+    const code = document.getElementById('admin2faSetupCodeInput');
+    if (code) code.focus();
+
+    showToast(
+      data.qrDataUrl
+        ? 'Escaneá el QR y confirmá con el código de 6 dígitos.'
+        : 'Usá la clave manual o abrí el autenticador para configurar el 2FA.',
+      'info'
+    );
   }
 
   async function confirmAdmin2faSetup() {
     const code = document.getElementById('admin2faSetupCodeInput')?.value || '';
+
     if (!pendingSetupPassword || !/^\d{6}$/.test(code)) {
       showToast('Ingresá el código de 6 dígitos del autenticador.', 'warning');
       return;
     }
+
     try {
       const res = await fetch('/api/auth/setup/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: pendingSetupPassword, totp: code })
       });
+
       const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
-      if (!res.ok || !data?.authenticated) throw new Error(data?.error || 'No se pudo confirmar el 2FA.');
+
+      if (!res.ok || !data?.authenticated) {
+        throw new Error(data?.error || 'No se pudo confirmar el 2FA.');
+      }
+
       pendingSetupPassword = '';
+      adminAuthStage = 'password';
       authToken = true;
-      document.getElementById('adminPasswordInput').value = '';
       resetAdmin2faSetupView();
       showAdminPanel();
       await loadAdminOrders();
@@ -2570,63 +2628,78 @@
 
   async function handleAdminLogin(e) {
     e.preventDefault();
-    const password = document.getElementById('adminPasswordInput').value;
-    const totp = document.getElementById('adminTotpInput').value;
-    if (!password) return;
 
-    if (adminSetupRequired) {
+    if (adminAuthStage === 'totp') {
+      const totp = document.getElementById('adminTotpInput')?.value || '';
+
+      if (!pendingSetupPassword || !/^\d{6}$/.test(totp)) {
+        showToast('Ingresá el código de 6 dígitos.', 'warning');
+        return;
+      }
+
       try {
-        const res = await fetch('/api/auth/setup/start', {
+        const res = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password })
+          body: JSON.stringify({ password: pendingSetupPassword, totp })
         });
+
         const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
-        if (!res.ok || !data?.qrDataUrl) throw new Error(data?.error || 'No se pudo iniciar la configuración 2FA.');
-        pendingSetupPassword = password;
-        const form = document.getElementById('adminLoginForm');
-        const setup = document.getElementById('admin2faSetupSection');
-        const qr = document.getElementById('admin2faQrImage');
-        const manual = document.getElementById('admin2faManualKey');
-        if (form) form.classList.add('hidden');
-        if (setup) setup.classList.remove('hidden');
-        if (qr) { qr.src = data.qrDataUrl; qr.classList.remove('hidden'); }
-        if (manual) manual.textContent = data.manualKey || '';
-        showToast('Escaneá el QR y confirmá con el código de 6 dígitos.', 'info');
+
+        if (!res.ok || !data?.authenticated) {
+          throw new Error(data?.error || 'Contraseña o código 2FA incorrecto.');
+        }
+
+        authToken = true;
+        pendingSetupPassword = '';
+        adminAuthStage = 'password';
+        resetAdmin2faSetupView();
+        showAdminPanel();
+        await loadAdminOrders();
+        await loadAdminStats();
+        await renderAdminProducts();
+        showToast('Sesión iniciada con 2FA.', 'success');
       } catch (err) {
-        console.error('Error iniciando configuración 2FA:', err);
-        showToast(err.message || 'No se pudo iniciar la configuración 2FA.', 'error');
+        console.error('Error iniciando sesión administrativa:', err);
+        showToast(err.message || 'No se pudo iniciar sesión.', 'error');
       }
       return;
     }
 
-    if (!totp) return;
+    const password = document.getElementById('adminPasswordInput')?.value || '';
+
+    if (!password) {
+      showToast('Ingresá la contraseña administrativa.', 'warning');
+      return;
+    }
+
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch('/api/auth/setup/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password, totp })
+        body: JSON.stringify({ password })
       });
+
       const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
-      if (res.status === 428 || data?.setupRequired) {
-        adminSetupRequired = true;
-        applyAdminAuthMode({ passwordConfigured: true, setupRequired: true });
-        showToast('Primero configurá el 2FA.', 'info');
+
+      if (!res.ok || !data) {
+        throw new Error(data?.error || 'No se pudo validar la contraseña.');
+      }
+
+      if (data.totpRequired) {
+        showAdminTotpLoginStep(password);
         return;
       }
-      if (!res.ok || !data?.authenticated) throw new Error(data?.error || 'Credenciales incorrectas o servidor no disponible.');
 
-      authToken = true;
-      document.getElementById('adminPasswordInput').value = '';
-      document.getElementById('adminTotpInput').value = '';
-      showAdminPanel();
-      await loadAdminOrders();
-      await loadAdminStats();
-      await renderAdminProducts();
-      showToast('Sesión iniciada con 2FA.', 'success');
+      if (data.setupRequired && data.manualKey) {
+        showAdmin2faSetup(data, password);
+        return;
+      }
+
+      throw new Error('El servidor no devolvió un estado 2FA válido.');
     } catch (err) {
-      console.error('Error iniciando sesión administrativa:', err);
-      showToast(err.message || 'No se pudo iniciar sesión.', 'error');
+      console.error('Error iniciando acceso administrativo:', err);
+      showToast(err.message || 'No se pudo iniciar el acceso administrativo.', 'error');
     }
   }
 
@@ -2653,7 +2726,7 @@
       await renderAdminProducts();
     } else {
       showLoginGate();
-      await refreshAdminAuthMode();
+      resetAdmin2faSetupView();
     }
     refreshLucide();
   }
@@ -3270,9 +3343,8 @@
     const admin2faConfirm = document.getElementById('admin2faConfirmBtn');
     const admin2faRestart = document.getElementById('admin2faRestartBtn');
     if (admin2faConfirm) admin2faConfirm.addEventListener('click', confirmAdmin2faSetup);
-    if (admin2faRestart) admin2faRestart.addEventListener('click', async () => {
+    if (admin2faRestart) admin2faRestart.addEventListener('click', () => {
       resetAdmin2faSetupView();
-      await refreshAdminAuthMode();
     });
 
     // Admin tabs

@@ -4,15 +4,14 @@ const crypto = require('crypto');
 
 const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 const ALLOWED_MIMES = ['image/jpeg', 'image/png', 'image/webp'];
-const STORE_NAME = 'pinpop-media';
-const isNetlifyRuntime = process.env.NETLIFY === 'true';
+const isVercelRuntime = process.env.VERCEL === '1' || Boolean(process.env.VERCEL_ENV);
 const uploadsDir = path.join(__dirname, 'public', 'images', 'uploads');
-let storePromise = null;
+let blobModulePromise = null;
 
-async function getMediaStore() {
-  if (!isNetlifyRuntime) return null;
-  if (!storePromise) storePromise = import('@netlify/blobs').then(({ getStore }) => getStore(STORE_NAME));
-  return storePromise;
+async function getBlobModule() {
+  if (!(isVercelRuntime || process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_OIDC_TOKEN)) return null;
+  if (!blobModulePromise) blobModulePromise = import('@vercel/blob');
+  return blobModulePromise;
 }
 
 function detectImageType(buffer) {
@@ -39,13 +38,16 @@ function decodeKey(id) { try { return Buffer.from(String(id), 'base64url').toStr
 async function saveImage(buffer, declaredMime) {
   const detected = assertValidImage(buffer, declaredMime);
   const filename = `products/pin-${crypto.randomUUID()}${detected.ext}`;
-  const store = await getMediaStore();
-  if (store) {
-    const arrayBuffer = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-    await store.set(filename, arrayBuffer, { metadata: { contentType: detected.mime, createdAt: Date.now() } });
-    return { url: `/api/media/${encodeKey(filename)}`, path: filename, provider: 'netlify-blobs', mime: detected.mime };
+  const blob = await getBlobModule();
+  if (blob) {
+    await blob.put(filename, buffer, {
+      access: 'private',
+      addRandomSuffix: false,
+      contentType: detected.mime
+    });
+    return { url: `/api/media/${encodeKey(filename)}`, path: filename, provider: 'vercel-blob', mime: detected.mime };
   }
-  if (isNetlifyRuntime) throw new Error('Netlify Blobs no está disponible temporalmente.');
+  if (isVercelRuntime) throw new Error('Vercel Blob no está disponible temporalmente.');
   if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
   const localName = path.basename(filename);
   fs.writeFileSync(path.join(uploadsDir, localName), buffer, { flag: 'wx' });
@@ -61,12 +63,12 @@ async function deleteImageByUrl(url) {
   if (url.startsWith('/api/media/')) {
     const key = decodeKey(url.split('/api/media/')[1].split(/[?#]/)[0]);
     if (!key || !key.startsWith('products/')) return { deleted:false, reason:'invalid-key' };
-    const store = await getMediaStore();
-    if (!store) return { deleted:false, reason:'store-unavailable' };
-    await store.delete(key);
-    return { deleted:true, provider:'netlify-blobs' };
+    const blob = await getBlobModule();
+    if (!blob) return { deleted:false, reason:'store-unavailable' };
+    await blob.del(key);
+    return { deleted:true, provider:'vercel-blob' };
   }
-  if (!isNetlifyRuntime) {
+  if (!isVercelRuntime) {
     const filename = path.basename(url);
     const localPath = path.join(uploadsDir, filename);
     if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
@@ -78,11 +80,12 @@ async function deleteImageByUrl(url) {
 async function getImageById(id) {
   const key = decodeKey(id);
   if (!key || !key.startsWith('products/')) return null;
-  const store = await getMediaStore();
-  if (!store) return null;
-  const entry = await store.getWithMetadata(key, { type:'arrayBuffer', consistency:'strong' });
-  if (!entry || !entry.data) return null;
-  return { buffer: Buffer.from(entry.data), contentType: entry.metadata?.contentType || 'application/octet-stream' };
+  const blob = await getBlobModule();
+  if (!blob) return null;
+  const result = await blob.get(key, { access:'private' });
+  if (!result) return null;
+  const arrayBuffer = await new Response(result.stream).arrayBuffer();
+  return { buffer: Buffer.from(arrayBuffer), contentType: result.blob?.contentType || 'application/octet-stream' };
 }
 
 async function ensureBucket() { return true; }

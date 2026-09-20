@@ -1,32 +1,36 @@
-# Estado do Projeto PINPOP — v2.2.1
+# ESTADO DO PROJETO — PINPOP v2.3.0
 
-## Arquitetura atual
+## Arquitetura
+- GitHub: repositório principal
+- Vercel: hosting + Functions
+- Vercel Blob privado: estado da loja + imagens
+- Express: API
+- Frontend: HTML/CSS/JS estático
 
-- Hospedagem: Netlify
-- Backend: Netlify Functions + Express
-- Dados: Netlify Blobs (`pinpop-data`)
-- Imagens: Netlify Blobs (`pinpop-media`)
-- Admin: senha forte + TOTP 2FA autoconfigurável + cookie HttpOnly
-- Checkout: WhatsApp +595 991 950 031
+## Admin
+- segredo manual: `ADMIN_PASSWORD`
+- primeiro login: senha → cadastro TOTP por QR → código 6 dígitos
+- sessão: cookie HttpOnly/Secure/SameSite=Strict
 
-## Configuração obrigatória
+## Funções preservadas
+- catálogo e busca
+- carrinho
+- WhatsApp +595 991 950 031
+- cadastro/edição/desativação de produtos
+- câmera/upload mobile
+- galeria de imagens
+- estoque e movimentações
+- pedidos, confirmação, entrega e estorno
+- categorias
+- dashboard
+- SEO, sitemap, robots e llms.txt
 
-Somente:
+## Infraestrutura removida
+- Netlify Functions
+- Netlify Blobs
+- `netlify.toml`
+- `_redirects` / `_headers` do Netlify
+- `serverless-http`
 
-```text
-ADMIN_PASSWORD
-```
-
-Não usar `DATABASE_URL`, `JWT_SECRET`, `ADMIN_TOTP_SECRET` ou Supabase.
-
-## Fluxo do primeiro acesso
-
-Senha → QR Code gerado pelo PINPOP → Authenticator → código 6 dígitos → sessão segura.
-
-## Recuperação
-
-Trocar `ADMIN_PASSWORD` invalida sessões antigas e força novo cadastro do 2FA.
-
-## Funcionalidades preservadas
-
-Catálogo, busca, filtros, favoritos, carrinho, WhatsApp, cadastro mobile com câmera, galeria, categorias, estoque, pedidos, confirmação/estorno/entrega, histórico, dashboard, SEO, sitemap e descoberta por buscadores/IA.
+## Observação de migração
+O Vercel Blob inicia com o catálogo fallback empacotado se ainda não existir estado persistido. Dados que eventualmente existam apenas no Netlify Blobs não são importados automaticamente.

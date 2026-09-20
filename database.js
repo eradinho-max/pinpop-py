@@ -1,10 +1,10 @@
 const crypto = require('crypto');
 const fallbackData = require('./fallback-data');
 
-const STORE_NAME = 'pinpop-data';
-const STATE_KEY = 'state-v1';
+const STATE_KEY = 'pinpop-data/state-v1.json';
 let localState = null;
-let storePromise = null;
+let blobModulePromise = null;
+let mutationQueue = Promise.resolve();
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -119,29 +119,50 @@ function makeInitialState() {
   };
 }
 
-async function getBlobStore() {
-  if (!process.env.NETLIFY) return null;
-  if (!storePromise) {
-    storePromise = import('@netlify/blobs').then(({ getStore }) => getStore(STORE_NAME));
-  }
-  return storePromise;
+function isVercelRuntime() {
+  return process.env.VERCEL === '1' || process.env.VERCEL_ENV || process.env.BLOB_READ_WRITE_TOKEN || process.env.VERCEL_OIDC_TOKEN;
+}
+
+async function getBlobModule() {
+  if (!isVercelRuntime()) return null;
+  if (!blobModulePromise) blobModulePromise = import('@vercel/blob');
+  return blobModulePromise;
+}
+
+async function readPrivateJson(pathname) {
+  const blob = await getBlobModule();
+  if (!blob) return null;
+  const result = await blob.get(pathname, { access: 'private', useCache: false });
+  if (!result) return null;
+  const text = await new Response(result.stream).text();
+  if (!text) return null;
+  return JSON.parse(text);
+}
+
+async function writePrivateJson(pathname, value) {
+  const blob = await getBlobModule();
+  if (!blob) throw new Error('Vercel Blob no está disponible.');
+  return blob.put(pathname, JSON.stringify(value), {
+    access: 'private',
+    addRandomSuffix: false,
+    allowOverwrite: true,
+    contentType: 'application/json'
+  });
 }
 
 async function readStateWithMeta() {
-  const store = await getBlobStore();
-  if (!store) {
+  const blob = await getBlobModule();
+  if (!blob) {
     if (!localState) localState = makeInitialState();
-    return { data: clone(localState), etag: 'local' };
+    return { data: clone(localState), provider: 'memory-dev' };
   }
 
-  let entry = await store.getWithMetadata(STATE_KEY, { type: 'json', consistency: 'strong' });
-  if (!entry) {
-    const initial = makeInitialState();
-    await store.setJSON(STATE_KEY, initial, { onlyIfNew: true });
-    entry = await store.getWithMetadata(STATE_KEY, { type: 'json', consistency: 'strong' });
+  let data = await readPrivateJson(STATE_KEY);
+  if (!data) {
+    data = makeInitialState();
+    await writePrivateJson(STATE_KEY, data);
   }
-  if (!entry || !entry.data) throw new Error('No se pudo inicializar el almacenamiento PINPOP.');
-  return entry;
+  return { data, provider: 'vercel-blob' };
 }
 
 async function readState() {
@@ -150,8 +171,8 @@ async function readState() {
 }
 
 async function mutateState(work) {
-  const store = await getBlobStore();
-  if (!store) {
+  const blob = await getBlobModule();
+  if (!blob) {
     if (!localState) localState = makeInitialState();
     const draft = clone(localState);
     const result = await work(draft);
@@ -159,14 +180,18 @@ async function mutateState(work) {
     return result;
   }
 
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const entry = await readStateWithMeta();
-    const draft = clone(entry.data);
+  // Serialize mutations inside each warm function instance. PINPOP is a small-store
+  // workload; Vercel Blob remains the single persistent source of truth.
+  const task = mutationQueue.then(async () => {
+    const current = await readState();
+    const draft = clone(current);
     const result = await work(draft);
-    const write = await store.setJSON(STATE_KEY, draft, { onlyIfMatch: entry.etag });
-    if (write.modified) return result;
-  }
-  throw new Error('El catálogo cambió al mismo tiempo. Intente nuevamente.');
+    draft.version = Math.max(1, Number(draft.version) || 1) + 1;
+    await writePrivateJson(STATE_KEY, draft);
+    return result;
+  });
+  mutationQueue = task.catch(() => undefined);
+  return task;
 }
 
 
@@ -406,7 +431,7 @@ async function createOrderSecure({ customer, items }) {
 }
 
 async function verifyAdminPassword() { return false; }
-async function updateAdminPassword() { throw new Error('La contraseña se administra desde las variables de entorno de Netlify.'); }
+async function updateAdminPassword() { throw new Error('La contraseña se administra desde las variables de entorno de Vercel.'); }
 
 async function getAllProductsAdmin() {
   const state = await readState();

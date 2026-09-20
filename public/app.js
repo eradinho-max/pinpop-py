@@ -33,6 +33,7 @@
   let adminAuthStage = 'password'; // password | totp | setup
   let pendingSetupPassword = '';
   let adminOrders = [];
+  let adminProductsCache = [];
   let isUploadingPhoto = false;
 
   // Modal active product & zoom state
@@ -1913,8 +1914,12 @@
   }
 
   function openStockAdjustModal(productId) {
-    const p = products.find(prod => prod.id === productId);
-    if (!p) return;
+    const p = adminProductsCache.find(prod => prod.id === productId)
+      || products.find(prod => prod.id === productId);
+    if (!p) {
+      showToast('No se pudo localizar el producto para gestionar el stock.', 'error');
+      return;
+    }
 
     adjustActiveProduct = p;
     adjustMode = 'entrada';
@@ -2213,6 +2218,7 @@
       if (!res.ok || !Array.isArray(adminProducts)) {
         throw new Error(adminProducts?.error || 'No se pudieron cargar los productos del administrador.');
       }
+      adminProductsCache = adminProducts;
       
       // Update quick filter counters
       const countAll = adminProducts.length;
@@ -2329,7 +2335,7 @@
                   ${isActive ? `
                     <button class="btn-admin-delete py-2 bg-slate-100 hover:bg-rose-50 text-slate-600 hover:text-rose-600 font-bold text-[11px] rounded-xl flex items-center justify-center gap-1" data-id="${escapeHtml(p.id)}">
                       <i data-lucide="eye-off" class="w-3.5 h-3.5"></i>
-                      <span>Ocultar</span>
+                      <span>Excluir</span>
                     </button>
                   ` : `
                     <button class="btn-admin-activate py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-bold text-[11px] rounded-xl flex items-center justify-center gap-1" data-id="${escapeHtml(p.id)}">
@@ -2379,10 +2385,10 @@
                   ${formatPrice(p.price)}
                 </td>
                 <td class="p-2.5 text-center">
-                  <button class="btn-admin-stock px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl flex items-center gap-1.5 mx-auto" data-id="${escapeHtml(p.id)}">
-                    <span>${stock} un</span>
-                    <i data-lucide="edit" class="w-3 h-3 text-[#FF2D8A]"></i>
-                  </button>
+                  <div class="inline-flex flex-col items-center gap-0.5">
+                    <span class="font-black text-slate-900 text-sm">${stock} un</span>
+                    <span class="text-[9px] text-slate-400">mín. ${minStock}</span>
+                  </div>
                 </td>
                 <td class="p-2.5 text-center">
                   ${!isActive ? `
@@ -2395,19 +2401,28 @@
                     <span class="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-100 text-emerald-800">🟢 OK</span>
                   `}
                 </td>
-                <td class="p-2.5 text-right space-x-1">
-                  <button class="btn-admin-edit p-1.5 text-slate-500 hover:text-[#FF2D8A] rounded-lg" data-id="${escapeHtml(p.id)}" title="Editar producto">
-                    <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
-                  </button>
-                  ${isActive ? `
-                    <button class="btn-admin-delete p-1.5 text-slate-400 hover:text-rose-600 rounded-lg" data-id="${escapeHtml(p.id)}" title="Desactivar del catálogo">
-                      <i data-lucide="eye-off" class="w-3.5 h-3.5"></i>
+                <td class="p-2.5">
+                  <div class="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                    <button class="btn-admin-edit px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-bold text-[10px] flex items-center gap-1" data-id="${escapeHtml(p.id)}" title="Editar producto">
+                      <i data-lucide="edit-3" class="w-3 h-3"></i>
+                      <span>Editar</span>
                     </button>
-                  ` : `
-                    <button class="btn-admin-activate p-1.5 text-emerald-600 hover:text-emerald-700 rounded-lg" data-id="${escapeHtml(p.id)}" title="Reactivar producto">
-                      <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+                    <button class="btn-admin-stock px-2.5 py-1.5 bg-[#FFE8F1] hover:bg-[#FFD4E5] text-[#FF2D8A] rounded-lg font-black text-[10px] flex items-center gap-1" data-id="${escapeHtml(p.id)}" title="Gestionar stock">
+                      <i data-lucide="package" class="w-3 h-3"></i>
+                      <span>Stock</span>
                     </button>
-                  `}
+                    ${isActive ? `
+                      <button class="btn-admin-delete px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg font-bold text-[10px] flex items-center gap-1" data-id="${escapeHtml(p.id)}" title="Excluir del catálogo">
+                        <i data-lucide="trash-2" class="w-3 h-3"></i>
+                        <span>Excluir</span>
+                      </button>
+                    ` : `
+                      <button class="btn-admin-activate px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg font-bold text-[10px] flex items-center gap-1" data-id="${escapeHtml(p.id)}" title="Reactivar producto">
+                        <i data-lucide="check-circle" class="w-3 h-3"></i>
+                        <span>Activar</span>
+                      </button>
+                    `}
+                  </div>
                 </td>
               </tr>
             `;
@@ -2440,7 +2455,7 @@
 
   async function deleteProduct(productId) {
     if (!authToken) return;
-    if (!confirm('¿Deseás desactivar este producto del catálogo? (Permanecerá guardado en el sistema)')) return;
+    if (!confirm('¿Excluir este producto del catálogo? Se ocultará de la tienda, pero permanecerá guardado en el historial y podrá reactivarse.')) return;
 
     try {
       const res = await fetch(`/api/admin/products/${productId}`, { method: 'DELETE', headers: getAuthHeaders() });
@@ -2448,7 +2463,7 @@
       const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
       if (!res.ok) throw new Error(data?.error || 'No se pudo desactivar el producto.');
 
-      showToast('Producto desactivado del catálogo.', 'info');
+      showToast('Producto excluido del catálogo. Podés reactivarlo desde Inactivos.', 'info');
       await loadProducts();
       renderProducts();
       await renderAdminProducts();

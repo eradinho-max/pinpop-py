@@ -2590,13 +2590,24 @@
     );
   }
 
+  let admin2faConfirming = false;
+
   async function confirmAdmin2faSetup() {
-    const code = document.getElementById('admin2faSetupCodeInput')?.value || '';
+    const input = document.getElementById('admin2faSetupCodeInput');
+    const code = input?.value || '';
+    const button = document.getElementById('admin2faConfirmBtn');
+    const status = document.getElementById('admin2faSetupStatus');
 
     if (!pendingSetupPassword || !/^\d{6}$/.test(code)) {
+      if (status) status.textContent = 'Ingresá los 6 dígitos que muestra tu autenticador.';
       showToast('Ingresá el código de 6 dígitos del autenticador.', 'warning');
       return;
     }
+
+    if (admin2faConfirming) return;
+    admin2faConfirming = true;
+    if (button) { button.disabled = true; button.textContent = 'Verificando…'; }
+    if (status) status.textContent = 'Verificando código…';
 
     try {
       const res = await fetch('/api/auth/setup/confirm', {
@@ -2622,7 +2633,12 @@
       showToast('2FA configurado. Panel administrativo listo.', 'success');
     } catch (err) {
       console.error('Error confirmando 2FA:', err);
+      if (status) status.textContent = err.message || 'No se pudo confirmar el código.';
+      if (input) { input.value = ''; input.focus(); }
       showToast(err.message || 'No se pudo confirmar el 2FA.', 'error');
+    } finally {
+      admin2faConfirming = false;
+      if (button) { button.disabled = false; button.textContent = 'Confirmar código y entrar'; }
     }
   }
 
@@ -3343,6 +3359,13 @@
     const admin2faConfirm = document.getElementById('admin2faConfirmBtn');
     const admin2faRestart = document.getElementById('admin2faRestartBtn');
     if (admin2faConfirm) admin2faConfirm.addEventListener('click', confirmAdmin2faSetup);
+    const admin2faSetupCode = document.getElementById('admin2faSetupCodeInput');
+    if (admin2faSetupCode) {
+      admin2faSetupCode.addEventListener('input', () => {
+        admin2faSetupCode.value = admin2faSetupCode.value.replace(/\D/g, '').slice(0, 6);
+        if (admin2faSetupCode.value.length === 6) confirmAdmin2faSetup();
+      });
+    }
     if (admin2faRestart) admin2faRestart.addEventListener('click', () => {
       resetAdmin2faSetupView();
     });

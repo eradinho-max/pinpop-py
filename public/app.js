@@ -304,6 +304,11 @@
       const el = document.getElementById('promoBannerText');
       if (el) el.textContent = settings.promoBanner;
     }
+
+    const whatsappNumber = String(settings.whatsappNumber || '595991950031').replace(/\D/g, '');
+    document.querySelectorAll('[data-whatsapp-link]').forEach(link => {
+      link.href = `https://wa.me/${whatsappNumber}`;
+    });
   }
 
   // --- RENDER FUNCTIONS ---
@@ -3333,6 +3338,43 @@
 
 
 
+  function handleWholesaleContactSubmit(e) {
+    e.preventDefault();
+
+    const name = document.getElementById('wholesaleName')?.value.trim() || '';
+    const phone = document.getElementById('wholesalePhone')?.value.trim() || '';
+    const city = document.getElementById('wholesaleCity')?.value.trim() || '';
+    const business = document.getElementById('wholesaleBusiness')?.value.trim() || '';
+    const line = document.getElementById('wholesaleLine')?.value || '';
+    const quantity = document.getElementById('wholesaleQuantity')?.value || '';
+    const notes = document.getElementById('wholesaleNotes')?.value.trim() || '';
+
+    if (!name || !phone || !city || !line || !quantity) {
+      showToast('Completá los campos obligatorios para solicitar precio mayorista.', 'warning');
+      return;
+    }
+
+    const whatsappNumber = String(settings.whatsappNumber || '595991950031').replace(/\D/g, '');
+    const message = [
+      'Hola PINPOP 👋',
+      '',
+      'Quiero consultar por *precios mayoristas*.',
+      '',
+      `*Nombre:* ${name}`,
+      `*Celular:* ${phone}`,
+      `*Ciudad:* ${city}`,
+      business ? `*Negocio/Tienda:* ${business}` : null,
+      `*Productos de interés:* ${line}`,
+      `*Cantidad aproximada:* ${quantity}`,
+      notes ? `*Mensaje:* ${notes}` : null,
+      '',
+      '¿Podrían enviarme disponibilidad y condiciones mayoristas?'
+    ].filter(Boolean).join('\n');
+
+    const url = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
   // --- TOAST NOTIFICATIONS ---
   function showToast(message, type = 'info') {
     const container = document.getElementById('toastContainer');
@@ -3360,6 +3402,9 @@
 
   // --- EVENT LISTENERS ---
   function setupEventListeners() {
+    const wholesaleForm = document.getElementById('wholesaleContactForm');
+    if (wholesaleForm) wholesaleForm.addEventListener('submit', handleWholesaleContactSubmit);
+
     // Mode Switcher (Crocs vs. Estetoscopio)
     const tabCrocs = document.getElementById('tabModeCrocs');
     const tabSteth = document.getElementById('tabModeEstetoscopio');

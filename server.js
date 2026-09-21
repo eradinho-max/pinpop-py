@@ -443,7 +443,9 @@ app.get('/producto/:id', async (req, res) => {
     const jsonLd = {
       '@context': 'https://schema.org/',
       '@type': 'Product',
+      '@id': `${canonical}#product`,
       name: product.name,
+      url: canonical,
       image: images,
       description,
       sku: product.sku,
@@ -451,14 +453,40 @@ app.get('/producto/:id', async (req, res) => {
       category: product.category,
       offers: {
         '@type': 'Offer',
+        '@id': `${canonical}#offer`,
         url: canonical,
         priceCurrency: 'PYG',
         price: effectivePrice,
         availability,
-        itemCondition: 'https://schema.org/NewCondition'
+        itemCondition: 'https://schema.org/NewCondition',
+        seller: {
+          '@type': 'OnlineStore',
+          '@id': `${baseUrl}/#store`,
+          name: 'PINPOP',
+          url: `${baseUrl}/`
+        }
       }
     };
+    const breadcrumbJsonLd = {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'PINPOP',
+          item: `${baseUrl}/`
+        },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: product.name,
+          item: canonical
+        }
+      ]
+    };
     const safeJsonLd = JSON.stringify(jsonLd).replace(/</g, '\\u003c');
+    const safeBreadcrumbJsonLd = JSON.stringify(breadcrumbJsonLd).replace(/</g, '\\u003c');
     const whatsapp = String(settings.whatsappNumber || '595991950031').replace(/\D/g, '');
     const openInCatalog = `/?producto=${encodeURIComponent(product.id)}`;
     const html = `<!doctype html>
@@ -468,12 +496,15 @@ app.get('/producto/:id', async (req, res) => {
 <meta name="description" content="${escapeHtmlServer(description).slice(0, 160)}">
 <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
 <link rel="canonical" href="${escapeHtmlServer(canonical)}">
-<meta property="og:type" content="product"><meta property="og:site_name" content="PINPOP">
+<meta property="og:type" content="product"><meta property="og:site_name" content="PINPOP"><meta property="og:locale" content="es_PY">
 <meta property="og:title" content="${escapeHtmlServer(product.name)} | PINPOP">
 <meta property="og:description" content="${escapeHtmlServer(description).slice(0, 200)}">
-<meta property="og:image" content="${escapeHtmlServer(productImage)}"><meta property="og:url" content="${escapeHtmlServer(canonical)}">
+<meta property="og:image" content="${escapeHtmlServer(productImage)}"><meta property="og:image:alt" content="${escapeHtmlServer(product.name)} | PINPOP"><meta property="og:url" content="${escapeHtmlServer(canonical)}">
 <meta property="product:price:amount" content="${effectivePrice}"><meta property="product:price:currency" content="PYG">
+<meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${escapeHtmlServer(product.name)} | PINPOP">
+<meta name="twitter:description" content="${escapeHtmlServer(description).slice(0, 200)}"><meta name="twitter:image" content="${escapeHtmlServer(productImage)}">
 <script type="application/ld+json">${safeJsonLd}</script>
+<script type="application/ld+json">${safeBreadcrumbJsonLd}</script>
 <style>body{font-family:system-ui,-apple-system,sans-serif;background:#f4f5f7;color:#111;margin:0}.wrap{max-width:760px;margin:0 auto;padding:28px 18px}.card{background:#fff;border:1px solid #e2e8f0;border-radius:24px;padding:20px;box-shadow:0 8px 30px #0000000d}.logo{height:58px}.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:22px}.img{width:100%;aspect-ratio:1;object-fit:contain;background:#f8fafc;border-radius:18px}.price{font-size:26px;font-weight:900}.tag{color:#ff2d8a;font-weight:800}.btn{display:inline-block;background:#ff2d8a;color:#fff;text-decoration:none;padding:13px 18px;border-radius:14px;font-weight:900}.muted{color:#64748b;font-size:14px}@media(max-width:640px){.grid{grid-template-columns:1fr}}</style>
 </head><body><main class="wrap"><a href="/"><img class="logo" src="/images/brand/pinpop-logo-web.png" alt="PINPOP"></a><div class="card grid"><div><img class="img" src="${escapeHtmlServer(productImage)}" alt="${escapeHtmlServer(product.name)}"></div><div><div class="tag">${escapeHtmlServer(product.category)}</div><h1>${escapeHtmlServer(product.name)}</h1><div class="price">Gs. ${effectivePrice.toLocaleString('es-PY')}</div><p>${escapeHtmlServer(description)}</p><p class="muted">${Number(product.stock || 0) > 0 ? `Disponible: ${Number(product.stock)} unidades` : 'Agotado'}</p><a class="btn" href="${openInCatalog}">Ver en catálogo y agregar al carrito</a><p class="muted">Pedidos y confirmación por WhatsApp: +595 991 950 031</p></div></div></main></body></html>`;
     res.type('html').send(html);

@@ -38,6 +38,7 @@
         "image":"https://pinpop-py.vercel.app/images/brand/pinpop-logo-web.png",
         "description":"Catálogo online de pins y charms para Crocs y estetoscopios en Paraguay.",
         "areaServed":{"@type":"Country","name":"Paraguay"},
+        "sameAs":["https://www.instagram.com/pinpop_py/"],
         "contactPoint":{
           "@type":"ContactPoint",
           "contactType":"sales",
@@ -1630,32 +1631,138 @@
     </div>
   </div>
 
+  <!-- Wholesale / Mayorista Contact -->
+  <section id="mayoristas" class="bg-white border-t border-slate-200 px-4 py-8 sm:py-10">
+    <div class="max-w-4xl mx-auto">
+      <div class="bg-[#F8F8FA] border border-slate-200 rounded-3xl p-5 sm:p-7 shadow-xs">
+        <div class="text-center mb-5">
+          <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFE8F1] text-[#FF2D8A] text-[10px] font-black uppercase tracking-wider">
+            📦 Precios Mayoristas
+          </span>
+          <h2 class="mt-2 text-xl sm:text-2xl font-black text-slate-900">¿Comprás para reventa o por cantidad?</h2>
+          <p class="mt-1 text-xs sm:text-sm text-slate-500">Completá los datos y te respondemos por WhatsApp con disponibilidad y condiciones mayoristas.</p>
+        </div>
+
+        <form id="wholesaleContactForm" class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          <div>
+            <label for="wholesaleName" class="block font-bold text-slate-700 mb-1">Nombre *</label>
+            <input id="wholesaleName" type="text" required maxlength="80" autocomplete="name"
+              class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25"
+              placeholder="Tu nombre">
+          </div>
+
+          <div>
+            <label for="wholesalePhone" class="block font-bold text-slate-700 mb-1">Celular *</label>
+            <input id="wholesalePhone" type="tel" required maxlength="30" autocomplete="tel"
+              class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25"
+              placeholder="Ej: 0981 123 456">
+          </div>
+
+          <div>
+            <label for="wholesaleCity" class="block font-bold text-slate-700 mb-1">Ciudad *</label>
+            <input id="wholesaleCity" type="text" required maxlength="80" autocomplete="address-level2"
+              class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25"
+              placeholder="Ej: Asunción">
+          </div>
+
+          <div>
+            <label for="wholesaleBusiness" class="block font-bold text-slate-700 mb-1">Negocio / Tienda</label>
+            <input id="wholesaleBusiness" type="text" maxlength="100" autocomplete="organization"
+              class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25"
+              placeholder="Opcional">
+          </div>
+
+          <div>
+            <label for="wholesaleLine" class="block font-bold text-slate-700 mb-1">Productos de interés *</label>
+            <select id="wholesaleLine" required
+              class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25">
+              <option value="Pins para Crocs">Pins para Crocs</option>
+              <option value="Pins para Estetoscopio">Pins para Estetoscopio</option>
+              <option value="Ambas líneas">Ambas líneas</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="wholesaleQuantity" class="block font-bold text-slate-700 mb-1">Cantidad aproximada *</label>
+            <select id="wholesaleQuantity" required
+              class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25">
+              <option value="20 a 49 unidades">20 a 49 unidades</option>
+              <option value="50 a 99 unidades">50 a 99 unidades</option>
+              <option value="100 o más unidades">100 o más unidades</option>
+            </select>
+          </div>
+
+          <div class="sm:col-span-2">
+            <label for="wholesaleNotes" class="block font-bold text-slate-700 mb-1">Mensaje</label>
+            <textarea id="wholesaleNotes" rows="2" maxlength="300"
+              class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#FF2D8A]/25"
+              placeholder="Contanos qué modelos o cantidades necesitás..."></textarea>
+          </div>
+
+          <div class="sm:col-span-2 flex flex-col sm:flex-row items-center justify-between gap-3 pt-1">
+            <p class="text-[10px] text-slate-400">Al enviar, se abrirá WhatsApp. PINPOP no guarda estos datos en el sitio.</p>
+            <button type="submit"
+              class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-xs shadow-sm transition-colors">
+              <i data-lucide="message-circle" class="w-4 h-4"></i>
+              Solicitar precio mayorista
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <!-- Floating WhatsApp -->
+  <a id="whatsappFloatingButton" data-whatsapp-link href="https://wa.me/595991950031" target="_blank" rel="noopener noreferrer"
+     class="fixed bottom-5 right-4 sm:right-6 z-40 inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-full shadow-xl px-3.5 py-3 sm:px-4 font-black text-xs transition-all hover:-translate-y-0.5"
+     aria-label="Hablar con PINPOP por WhatsApp" title="WhatsApp PINPOP">
+    <i data-lucide="message-circle" class="w-5 h-5"></i>
+    <span class="hidden sm:inline">WhatsApp</span>
+  </a>
+
   <!-- Toast Notification Container -->
   <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
 
-  <!-- Footer with Legal & Official Brand Logo -->
-  <footer class="mt-auto bg-white border-t border-slate-200 py-8 px-4 text-center text-xs text-slate-500 space-y-3">
-    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+  <!-- Footer with Legal, Social & Official Brand Logo -->
+  <footer class="mt-auto bg-white border-t border-slate-200 py-8 px-4 text-center text-xs text-slate-500 space-y-4">
+    <div class="max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-4">
       <div class="flex items-center gap-2">
         <img src="images/brand/pinpop-logo-web.png" alt="PINPOP" class="h-9 sm:h-10 w-auto object-contain">
         <span class="text-slate-400 font-bold">| Asunción, Paraguay 🇵🇾</span>
       </div>
-      <p class="text-[11px] text-slate-400">
+
+      <p class="text-[11px] text-slate-400 max-w-xl">
         Pins y accesorios compatibles con Crocs en Paraguay, charms decorativos y dijes para estetoscopios en Asunción. Catálogo online con stock real y pedidos vía WhatsApp.
       </p>
-      <div class="flex items-center gap-2 text-slate-400">
-        <span class="font-mono text-[10px]">PINPOP v3.2</span>
-        <span class="text-slate-200" aria-hidden="true">·</span>
-        <button
-          id="openAdminBtn"
-          type="button"
-          class="text-[9px] text-slate-300 hover:text-slate-500 transition-colors font-medium"
-          title="Administración"
-          aria-label="Abrir panel de administración"
-        >
-          Administración
-        </button>
+
+      <div class="flex items-center gap-2">
+        <a href="https://www.instagram.com/pinpop_py/" target="_blank" rel="noopener noreferrer"
+           class="inline-flex items-center gap-1.5 px-3 py-2 rounded-full border border-slate-200 hover:border-[#FF2D8A] hover:text-[#FF2D8A] transition-colors font-bold"
+           aria-label="Instagram PINPOP">
+          <i data-lucide="instagram" class="w-4 h-4"></i>
+          @pinpop_py
+        </a>
+        <a data-whatsapp-link href="https://wa.me/595991950031" target="_blank" rel="noopener noreferrer"
+           class="inline-flex items-center gap-1.5 px-3 py-2 rounded-full border border-emerald-200 text-emerald-700 hover:bg-emerald-50 transition-colors font-bold"
+           aria-label="WhatsApp PINPOP">
+          <i data-lucide="message-circle" class="w-4 h-4"></i>
+          WhatsApp
+        </a>
       </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto flex items-center justify-center gap-2 text-slate-400">
+      <span class="font-mono text-[10px]">PINPOP v3.2</span>
+      <span class="text-slate-200" aria-hidden="true">·</span>
+      <button
+        id="openAdminBtn"
+        type="button"
+        class="text-[9px] text-slate-300 hover:text-slate-500 transition-colors font-medium"
+        title="Administración"
+        aria-label="Abrir panel de administración"
+      >
+        Administración
+      </button>
     </div>
   </footer>
 

@@ -1392,7 +1392,108 @@
     showToast(`¡${selected.length} pines agregados al carrito desde el simulador! 🛒`, 'success');
   }
 
-  // --- CLIENT-SIDE IMAGE COMPRESSION (Secciones 6, 7, 8) ---
+  // --- CLIENT-SIDE IMAGE COMPRESSION + WHITE PAPER BACKGROUND ---
+  function whitenPaperBackground(ctx, width, height) {
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+    const totalPixels = width * height;
+    if (!totalPixels) return false;
+
+    // Estimate the paper color from bright pixels around the image border.
+    // This works especially well when the product is photographed over white paper.
+    const rs = [], gs = [], bs = [];
+    const step = Math.max(1, Math.floor(Math.min(width, height) / 90));
+
+    const collect = (x, y) => {
+      const i = (y * width + x) * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      if (lum >= 145) {
+        rs.push(r); gs.push(g); bs.push(b);
+      }
+    };
+
+    for (let x = 0; x < width; x += step) {
+      collect(x, 0);
+      if (height > 1) collect(x, height - 1);
+    }
+    for (let y = step; y < height - 1; y += step) {
+      collect(0, y);
+      if (width > 1) collect(width - 1, y);
+    }
+
+    if (rs.length < 12) return false;
+
+    const median = (arr) => {
+      arr.sort((a, b) => a - b);
+      return arr[Math.floor(arr.length / 2)];
+    };
+
+    const bgR = median(rs), bgG = median(gs), bgB = median(bs);
+    const bgLum = 0.2126 * bgR + 0.7152 * bgG + 0.0722 * bgB;
+    const bgChroma = Math.max(bgR, bgG, bgB) - Math.min(bgR, bgG, bgB);
+
+    // Do nothing when the border is not actually a light paper-like background.
+    if (bgLum < 165) return false;
+
+    const minLum = Math.max(140, bgLum - 100);
+    const maxChroma = Math.max(88, bgChroma + 52);
+    const visited = new Uint8Array(totalPixels);
+    const queue = new Int32Array(totalPixels);
+    let head = 0, tail = 0;
+
+    const isBackgroundCandidate = (pixelIndex) => {
+      const i = pixelIndex * 4;
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      if (lum < minLum) return false;
+
+      const chroma = Math.max(r, g, b) - Math.min(r, g, b);
+      if (chroma > maxChroma) return false;
+
+      const distance = Math.abs(r - bgR) + Math.abs(g - bgG) + Math.abs(b - bgB);
+      return distance <= 245;
+    };
+
+    const enqueue = (pixelIndex) => {
+      if (pixelIndex < 0 || pixelIndex >= totalPixels || visited[pixelIndex]) return;
+      visited[pixelIndex] = 1;
+      if (isBackgroundCandidate(pixelIndex)) queue[tail++] = pixelIndex;
+    };
+
+    // Seed only from image borders, so light details inside the product are preserved.
+    for (let x = 0; x < width; x++) {
+      enqueue(x);
+      if (height > 1) enqueue((height - 1) * width + x);
+    }
+    for (let y = 1; y < height - 1; y++) {
+      enqueue(y * width);
+      if (width > 1) enqueue(y * width + width - 1);
+    }
+
+    let changed = 0;
+    while (head < tail) {
+      const p = queue[head++];
+      const x = p % width;
+      const y = Math.floor(p / width);
+      const i = p * 4;
+
+      data[i] = 255;
+      data[i + 1] = 255;
+      data[i + 2] = 255;
+      data[i + 3] = 255;
+      changed++;
+
+      if (x > 0) enqueue(p - 1);
+      if (x + 1 < width) enqueue(p + 1);
+      if (y > 0) enqueue(p - width);
+      if (y + 1 < height) enqueue(p + width);
+    }
+
+    if (changed > 0) ctx.putImageData(imageData, 0, 0);
+    return changed > 0;
+  }
+
   async function compressImageFile(file, maxWidth = 1200, maxHeight = 1200, quality = 0.82) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -1418,6 +1519,16 @@
           canvas.height = height;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, width, height);
+
+          const autoWhiteBackground = document.getElementById('autoWhiteBackground');
+          if (!autoWhiteBackground || autoWhiteBackground.checked) {
+            try {
+              whitenPaperBackground(ctx, width, height);
+            } catch (backgroundErr) {
+              // Background enhancement is optional and must never block product upload.
+              console.warn('PINPOP white background enhancement skipped:', backgroundErr);
+            }
+          }
 
           // WebP with JPEG fallback
           canvas.toBlob((blob) => {
@@ -1603,7 +1714,8 @@
         if (saveAnotherBtn) saveAnotherBtn.disabled = true;
 
         if (statusEl) {
-          statusEl.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-amber-500 animate-ping"></span> <span>Procesando imagen (WebP)...</span>`;
+          const whiteBgEnabled = document.getElementById('autoWhiteBackground')?.checked !== false;
+          statusEl.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-amber-500 animate-ping"></span> <span>${whiteBgEnabled ? 'Limpiando fondo y optimizando' : 'Optimizando'} imagen (WebP)...</span>`;
         }
 
         // 1. Immediate local thumbnail preview
@@ -1622,7 +1734,8 @@
         setMainProductImage(finalImageUrl);
 
         if (statusEl) {
-          statusEl.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span> <span class="text-emerald-700 font-bold">✓ Imagen lista y optimizada (${uploaded.compSizeKb} KB WebP)</span>`;
+          const whiteBgEnabled = document.getElementById('autoWhiteBackground')?.checked !== false;
+          statusEl.innerHTML = `<span class="inline-block w-2 h-2 rounded-full bg-emerald-500"></span> <span class="text-emerald-700 font-bold">✓ Imagen lista${whiteBgEnabled ? ' · fondo blanco' : ''} (${uploaded.compSizeKb} KB WebP)</span>`;
         }
         if (metaEl) metaEl.textContent = `${uploaded.origSizeKb} KB → ${uploaded.compSizeKb} KB (WebP)`;
         showToast('✓ Foto optimizada y guardada.', 'success');

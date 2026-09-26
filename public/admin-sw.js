@@ -1,10 +1,10 @@
-const CACHE_NAME = 'pinpop-admin-v2';
+const CACHE_NAME = 'pinpop-admin-v3';
 const APP_SHELL = [
   '/admin/',
-  '/style.css?v=2.3.8',
+  '/style.css?v=2.3.9',
   '/tailwind-built.css?v=2.2.2',
   '/vendor/icons.js?v=2.2.2',
-  '/app.js?v=2.3.8',
+  '/app.js?v=2.3.9',
   '/images/brand/pinpop-admin-192.png',
   '/images/brand/pinpop-admin-512.png'
 ];

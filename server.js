@@ -207,7 +207,11 @@ app.use('/images', express.static(path.join(__dirname, 'public/images')));
 
 // Dedicated installable administrative shell. It reuses the existing admin UI
 // and backend, but is intentionally noindex and opens in standalone PWA mode.
-app.get(['/admin', '/admin/'], (req, res) => {
+app.get('/admin', (req, res) => {
+  return res.redirect(302, '/admin/');
+});
+
+app.get('/admin/', (req, res) => {
   try {
     const indexPath = path.join(__dirname, 'public/index.html');
     let html = fs.readFileSync(indexPath, 'utf8');
@@ -220,7 +224,7 @@ app.get(['/admin', '/admin/'], (req, res) => {
       )
       .replace(
         '<head>',
-        '<head>\n  <base href="/">\n  <link rel="manifest" href="/admin-manifest.webmanifest">\n  <meta name="apple-mobile-web-app-capable" content="yes">\n  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">\n  <meta name="apple-mobile-web-app-title" content="PINPOP Admin">\n  <link rel="apple-touch-icon" href="/images/brand/pinpop-logo-web.png">'
+        '<head>\n  <base href="/">\n  <link rel="manifest" href="/admin-manifest.webmanifest">\n  <meta name="apple-mobile-web-app-capable" content="yes">\n  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">\n  <meta name="apple-mobile-web-app-title" content="PINPOP Admin">\n  <link rel="apple-touch-icon" sizes="192x192" href="/images/brand/pinpop-admin-192.png">'
       );
 
     res.setHeader('Cache-Control', 'no-store');

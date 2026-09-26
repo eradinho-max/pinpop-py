@@ -477,3 +477,47 @@ body {
     display: block !important;
   }
 }
+
+
+/* =========================================================
+   PINPOP ADMIN PWA — standalone administrative app
+   ========================================================= */
+.admin-app-hidden {
+  display: none !important;
+}
+
+body.admin-app-mode {
+  min-height: 100dvh;
+  overflow: hidden;
+  background: #f4f5f7;
+}
+
+body.admin-app-mode #adminModal {
+  padding: 0 !important;
+  align-items: stretch !important;
+  background: #f4f5f7 !important;
+  overflow: hidden !important;
+}
+
+body.admin-app-mode #adminModal .admin-modal-shell {
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 100dvh !important;
+  max-height: 100dvh !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+body.admin-app-mode #adminModal .admin-modal-topbar {
+  padding-top: max(0.75rem, env(safe-area-inset-top)) !important;
+}
+
+body.admin-app-mode #adminContentSection {
+  min-height: 0;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+body.admin-app-mode #closeAdminBtn {
+  display: none !important;
+}

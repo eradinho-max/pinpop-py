@@ -32,6 +32,8 @@
   let authToken = false;
   let adminAuthStage = 'password'; // password | totp | setup
   let pendingSetupPassword = '';
+  let adminRememberDevice = false;
+  const isAdminAppMode = window.location.pathname === '/admin' || window.location.pathname === '/admin/';
   let adminOrders = [];
   let adminProductsCache = [];
   let isUploadingPhoto = false;
@@ -69,6 +71,11 @@
 
   // --- INIT ---
   document.addEventListener('DOMContentLoaded', async () => {
+    if (isAdminAppMode) {
+      prepareAdminAppMode();
+      registerAdminPwa();
+    }
+
     loadCartFromStorage();
     loadFavoritesFromStorage();
     await loadSettings();
@@ -105,10 +112,42 @@
     // Mobile/tablet browser Back must navigate inside PINPOP first.
     window.addEventListener('popstate', handleBrowserNavigation);
 
-    if (window.location.hash === '#admin') {
+    if (isAdminAppMode || window.location.hash === '#admin') {
       openAdminModal();
     }
   });
+
+  function prepareAdminAppMode() {
+    document.body.classList.add('admin-app-mode');
+
+    const allowedIds = new Set([
+      'adminModal',
+      'productFormModal',
+      'stockAdjustModal',
+      'categoryManagerModal',
+      'toastContainer'
+    ]);
+
+    Array.from(document.body.children).forEach(el => {
+      if (el.tagName === 'SCRIPT') return;
+      if (!allowedIds.has(el.id)) el.classList.add('admin-app-hidden');
+    });
+
+    const remember = document.getElementById('adminRememberDevice');
+    if (remember) remember.checked = true;
+
+    const closeBtn = document.getElementById('closeAdminBtn');
+    if (closeBtn) closeBtn.classList.add('hidden');
+
+    document.title = 'PINPOP Admin';
+  }
+
+  function registerAdminPwa() {
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('/admin-sw.js', { scope: '/admin' }).catch(err => {
+      console.warn('PINPOP Admin PWA registration skipped:', err);
+    });
+  }
 
   function refreshLucide() {
     if (window.lucide) {
@@ -2819,7 +2858,7 @@
       const res = await fetch('/api/auth/setup/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: pendingSetupPassword, totp: code })
+        body: JSON.stringify({ password: pendingSetupPassword, totp: code, rememberDevice: adminRememberDevice })
       });
 
       const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
@@ -2863,7 +2902,7 @@
         const res = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ password: pendingSetupPassword, totp })
+          body: JSON.stringify({ password: pendingSetupPassword, totp, rememberDevice: adminRememberDevice })
         });
 
         const data = res.headers.get('content-type')?.includes('application/json') ? await res.json() : null;
@@ -2889,6 +2928,7 @@
     }
 
     const password = document.getElementById('adminPasswordInput')?.value || '';
+    adminRememberDevice = Boolean(document.getElementById('adminRememberDevice')?.checked);
 
     if (!password) {
       showToast('Ingresá la contraseña administrativa.', 'warning');
@@ -2958,6 +2998,7 @@
   }
 
   function closeAdminModal() {
+    if (isAdminAppMode) return;
     const modal = document.getElementById('adminModal');
     if (modal) modal.classList.add('hidden');
   }

@@ -408,6 +408,7 @@ app.get('/robots.txt', async (req, res) => {
   res.type('text/plain').send([
     'User-agent: *',
     'Allow: /',
+    'Disallow: /admin',
     'Disallow: /api/admin/',
     'Disallow: /api/auth/',
     '',
@@ -665,7 +666,7 @@ app.post('/api/auth/setup/confirm', loginLimiter, async (req, res) => {
     if (!verifyTotp(totp, pendingSecret)) return res.status(401).json({ error: 'Código 2FA incorrecto. Verifique la hora del celular e intente nuevamente.' });
     await db.confirmAdminTotpSetup(fingerprint, pendingSecret);
     setAdminSessionCookie(res, Boolean(rememberDevice));
-    return res.json({ authenticated: true, configured: true, expiresIn: '8h', user: { username: 'admin', role: 'admin' } });
+    return res.json({ authenticated: true, configured: true, expiresIn: rememberDevice ? '30d' : '8h', user: { username: 'admin', role: 'admin' } });
   } catch (err) {
     console.error('PINPOP 2FA setup confirm error:', err.message);
     return res.status(503).json({ error: 'No se pudo confirmar la configuración 2FA.' });
@@ -676,7 +677,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
   if (!adminPasswordReady) {
     return res.status(503).json({ error: 'Admin no configurado. Defina ADMIN_PASSWORD en Vercel.' });
   }
-  const { password, totp } = req.body || {};
+  const { password, totp, rememberDevice } = req.body || {};
   if (!password || !totp) return res.status(400).json({ error: 'Contraseña y código 2FA son obligatorios.' });
   if (!timingSafeTextEqual(password, configuredAdminPassword)) {
     return res.status(401).json({ error: 'Contraseña o código 2FA incorrecto.' });
@@ -693,7 +694,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
       return res.status(401).json({ error: 'Contraseña o código 2FA incorrecto.' });
     }
     setAdminSessionCookie(res, Boolean(rememberDevice));
-    return res.json({ authenticated: true, expiresIn: '8h', user: { username: 'admin', role: 'admin' } });
+    return res.json({ authenticated: true, expiresIn: rememberDevice ? '30d' : '8h', user: { username: 'admin', role: 'admin' } });
   } catch (err) {
     console.error('PINPOP login error:', err.message);
     return res.status(503).json({ error: 'Almacenamiento temporalmente no disponible.' });

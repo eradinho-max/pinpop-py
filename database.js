@@ -276,7 +276,32 @@ async function confirmAdminTotpSetup(passwordFingerprint, secret) {
 }
 
 async function initDatabase() {
-  await readStateWithMeta();
+  const entry = await readStateWithMeta();
+
+  // Lightweight catalog migration: keep the requested metallic-pins category
+  // available without changing the existing dynamic category manager.
+  const hasMetalCategory = Array.isArray(entry.data?.categories) && entry.data.categories.some(
+    c => c.target_type === 'crocs' && String(c.name || '').toLowerCase() === 'pins metálicos'
+  );
+
+  if (!hasMetalCategory) {
+    await mutateState(async state => {
+      const alreadyExists = state.categories.some(
+        c => c.target_type === 'crocs' && String(c.name || '').toLowerCase() === 'pins metálicos'
+      );
+      if (!alreadyExists) {
+        state.categories.push({
+          id: 'cat-pins-metalicos',
+          name: 'Pins Metálicos',
+          target_type: 'crocs',
+          active: 1,
+          created_at: new Date().toISOString()
+        });
+      }
+      return true;
+    });
+  }
+
   return true;
 }
 

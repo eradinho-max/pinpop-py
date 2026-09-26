@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const multer = require('multer');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -27,6 +28,7 @@ const configuredAdminPassword = process.env.ADMIN_PASSWORD || '';
 const adminPasswordReady = configuredAdminPassword.length >= 12;
 const SESSION_COOKIE = 'pinpop_admin_session';
 const SESSION_TTL_SECONDS = 8 * 60 * 60;
+const TRUSTED_DEVICE_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 if (isProduction && !adminPasswordReady) {
   console.warn('⚠️ PINPOP: Admin deshabilitado. Configure ADMIN_PASSWORD con al menos 12 caracteres.');
@@ -94,8 +96,9 @@ function sessionSigningKey() {
   return crypto.createHash('sha256').update(`${configuredAdminPassword}|pinpop-session-v2`).digest();
 }
 
-function createSessionToken() {
-  const payload = Buffer.from(JSON.stringify({ sub: 'admin', exp: Date.now() + SESSION_TTL_SECONDS * 1000 })).toString('base64url');
+function createSessionToken(ttlSeconds = SESSION_TTL_SECONDS) {
+  const safeTtl = Number(ttlSeconds) > 0 ? Number(ttlSeconds) : SESSION_TTL_SECONDS;
+  const payload = Buffer.from(JSON.stringify({ sub: 'admin', exp: Date.now() + safeTtl * 1000 })).toString('base64url');
   const sig = crypto.createHmac('sha256', sessionSigningKey()).update(payload).digest('base64url');
   return `${payload}.${sig}`;
 }
@@ -122,9 +125,10 @@ function readCookie(req, name) {
   return null;
 }
 
-function setAdminSessionCookie(res) {
+function setAdminSessionCookie(res, rememberDevice = false) {
   const secure = isProduction ? '; Secure' : '';
-  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(createSessionToken())}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_TTL_SECONDS}${secure}`);
+  const ttl = rememberDevice ? TRUSTED_DEVICE_TTL_SECONDS : SESSION_TTL_SECONDS;
+  res.setHeader('Set-Cookie', `${SESSION_COOKIE}=${encodeURIComponent(createSessionToken(ttl))}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${ttl}${secure}`);
 }
 
 function clearAdminSessionCookie(res) {
@@ -200,6 +204,33 @@ app.use('/api', (req, res, next) => {
 // Static files
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/images', express.static(path.join(__dirname, 'public/images')));
+
+// Dedicated installable administrative shell. It reuses the existing admin UI
+// and backend, but is intentionally noindex and opens in standalone PWA mode.
+app.get(['/admin', '/admin/'], (req, res) => {
+  try {
+    const indexPath = path.join(__dirname, 'public/index.html');
+    let html = fs.readFileSync(indexPath, 'utf8');
+
+    html = html
+      .replace('<title>PINPOP Paraguay | Pins para Crocs y Estetoscopios</title>', '<title>PINPOP Admin</title>')
+      .replace(
+        '<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">',
+        '<meta name="robots" content="noindex,nofollow,noarchive">'
+      )
+      .replace(
+        '<head>',
+        '<head>\n  <base href="/">\n  <link rel="manifest" href="/admin-manifest.webmanifest">\n  <meta name="apple-mobile-web-app-capable" content="yes">\n  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">\n  <meta name="apple-mobile-web-app-title" content="PINPOP Admin">\n  <link rel="apple-touch-icon" href="/images/brand/pinpop-logo-web.png">'
+      );
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+    return res.type('html').send(html);
+  } catch (err) {
+    console.error('PINPOP Admin shell error:', err.message);
+    return res.status(500).type('text/plain').send('No se pudo abrir PINPOP Admin.');
+  }
+});
 
 // ==========================================
 // RATE LIMITING
@@ -620,7 +651,7 @@ app.post('/api/auth/setup/start', loginLimiter, async (req, res) => {
 
 app.post('/api/auth/setup/confirm', loginLimiter, async (req, res) => {
   if (!adminPasswordReady) return res.status(503).json({ error: 'Admin no configurado.' });
-  const { password, totp } = req.body || {};
+  const { password, totp, rememberDevice } = req.body || {};
   if (!password || !totp) return res.status(400).json({ error: 'Contraseña y código 2FA son obligatorios.' });
   if (!timingSafeTextEqual(password, configuredAdminPassword)) {
     return res.status(401).json({ error: 'Contraseña incorrecta.' });
@@ -633,7 +664,7 @@ app.post('/api/auth/setup/confirm', loginLimiter, async (req, res) => {
     if (!pendingSecret) return res.status(409).json({ error: 'No hay una configuración 2FA pendiente. Comience nuevamente.' });
     if (!verifyTotp(totp, pendingSecret)) return res.status(401).json({ error: 'Código 2FA incorrecto. Verifique la hora del celular e intente nuevamente.' });
     await db.confirmAdminTotpSetup(fingerprint, pendingSecret);
-    setAdminSessionCookie(res);
+    setAdminSessionCookie(res, Boolean(rememberDevice));
     return res.json({ authenticated: true, configured: true, expiresIn: '8h', user: { username: 'admin', role: 'admin' } });
   } catch (err) {
     console.error('PINPOP 2FA setup confirm error:', err.message);
@@ -661,7 +692,7 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     if (!secret || !verifyTotp(totp, secret)) {
       return res.status(401).json({ error: 'Contraseña o código 2FA incorrecto.' });
     }
-    setAdminSessionCookie(res);
+    setAdminSessionCookie(res, Boolean(rememberDevice));
     return res.json({ authenticated: true, expiresIn: '8h', user: { username: 'admin', role: 'admin' } });
   } catch (err) {
     console.error('PINPOP login error:', err.message);

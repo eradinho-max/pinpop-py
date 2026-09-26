@@ -478,13 +478,11 @@ body {
   }
 }
 
-
 /* =========================================================
-   PINPOP ADMIN PWA — standalone administrative app
+   PINPOP ADMIN PWA — dedicated mobile administrative UI
+   Only applies at /admin and never changes the public store.
    ========================================================= */
-.admin-app-hidden {
-  display: none !important;
-}
+.admin-app-hidden { display: none !important; }
 
 body.admin-app-mode {
   min-height: 100dvh;
@@ -507,17 +505,196 @@ body.admin-app-mode #adminModal .admin-modal-shell {
   border: 0 !important;
   border-radius: 0 !important;
   box-shadow: none !important;
+  background: #f4f5f7 !important;
 }
 
-body.admin-app-mode #adminModal .admin-modal-topbar {
-  padding-top: max(0.75rem, env(safe-area-inset-top)) !important;
+body.admin-app-mode #adminModal .admin-modal-topbar.admin-app-topbar {
+  min-height: 64px;
+  padding: max(.7rem, env(safe-area-inset-top)) 1rem .7rem !important;
+  background: #111111 !important;
+  border-bottom: 0 !important;
+  box-shadow: 0 5px 20px rgba(17,17,17,.12);
+}
+
+body.admin-app-mode .admin-app-icon {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 10px;
+  object-fit: cover !important;
 }
 
 body.admin-app-mode #adminContentSection {
   min-height: 0;
-  padding-bottom: env(safe-area-inset-bottom);
+  padding-bottom: calc(78px + env(safe-area-inset-bottom));
+  background: #f4f5f7;
 }
 
-body.admin-app-mode #closeAdminBtn {
+body.admin-app-mode #adminContentSection > .bg-slate-100.border-b {
   display: none !important;
+}
+
+body.admin-app-mode .admin-tab-content {
+  padding-left: 14px !important;
+  padding-right: 14px !important;
+}
+
+body.admin-app-mode #adminTabDashboard {
+  padding-top: 12px !important;
+}
+
+body.admin-app-mode #adminTabDashboard > .grid:first-child > div {
+  background: #fff !important;
+  border-color: #eceef1 !important;
+  box-shadow: 0 5px 18px rgba(15,23,42,.05);
+}
+
+body.admin-app-mode #closeAdminBtn { display: none !important; }
+
+.admin-app-welcome {
+  display: none;
+}
+
+body.admin-app-mode .admin-app-welcome {
+  display: block;
+  padding: 18px 16px 10px;
+  background: linear-gradient(180deg, #111111 0%, #222222 72%, #f4f5f7 72%);
+}
+
+.admin-app-welcome-copy {
+  color: #fff;
+  padding: 2px 3px 18px;
+}
+
+.admin-app-eyebrow {
+  display: block;
+  color: #ff8bbb;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .14em;
+  margin-bottom: 3px;
+}
+
+.admin-app-welcome-copy h2 {
+  font-size: 22px;
+  line-height: 1.1;
+  font-weight: 900;
+  margin: 0;
+}
+
+.admin-app-welcome-copy p {
+  font-size: 11px;
+  color: #cbd5e1;
+  margin-top: 4px;
+}
+
+.admin-app-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0,1fr));
+  gap: 8px;
+  background: #fff;
+  padding: 10px;
+  border: 1px solid #eceef1;
+  border-radius: 20px;
+  box-shadow: 0 12px 30px rgba(15,23,42,.09);
+}
+
+.admin-app-quick {
+  min-width: 0;
+  min-height: 68px;
+  border: 0;
+  border-radius: 14px;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 9px;
+  font-weight: 800;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.admin-app-quick-primary {
+  background: #ff2d8a;
+  color: #fff;
+}
+
+.admin-app-quick-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.admin-app-bottom-nav {
+  display: none;
+}
+
+body.admin-app-mode .admin-app-bottom-nav {
+  position: absolute;
+  display: grid;
+  grid-template-columns: 1fr 1fr 72px 1fr 1fr;
+  align-items: end;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(68px + env(safe-area-inset-bottom));
+  padding: 7px 8px env(safe-area-inset-bottom);
+  background: rgba(255,255,255,.97);
+  border-top: 1px solid #e5e7eb;
+  box-shadow: 0 -8px 24px rgba(15,23,42,.08);
+  z-index: 90;
+  backdrop-filter: blur(14px);
+}
+
+.admin-app-nav-btn {
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  min-height: 54px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font-weight: 800;
+}
+
+.admin-app-nav-btn > span { font-size: 20px; line-height: 1; }
+.admin-app-nav-btn small { font-size: 9px; }
+.admin-app-nav-btn.active { color: #ff2d8a; }
+
+.admin-app-nav-add {
+  width: 58px;
+  height: 58px;
+  justify-self: center;
+  align-self: start;
+  transform: translateY(-17px);
+  border: 5px solid #fff;
+  border-radius: 999px;
+  background: #ff2d8a;
+  color: #fff;
+  box-shadow: 0 10px 22px rgba(255,45,138,.34);
+  font-size: 32px;
+  line-height: 1;
+  font-weight: 400;
+}
+
+body.admin-app-mode #productFormModal > div,
+body.admin-app-mode #stockAdjustModal > div,
+body.admin-app-mode #categoryManagerModal > div {
+  border-radius: 20px !important;
+}
+
+@media (min-width: 700px) {
+  body.admin-app-mode #adminModal .admin-modal-shell {
+    max-width: 820px !important;
+    margin: 0 auto;
+    border-left: 1px solid #e5e7eb !important;
+    border-right: 1px solid #e5e7eb !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .admin-app-quick-grid { gap: 5px; padding: 8px; }
+  .admin-app-quick { min-height: 62px; font-size: 8px; }
 }

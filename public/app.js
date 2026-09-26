@@ -139,7 +139,112 @@
     const closeBtn = document.getElementById('closeAdminBtn');
     if (closeBtn) closeBtn.classList.add('hidden');
 
+    const topbar = document.querySelector('#adminModal .admin-modal-topbar');
+    if (topbar) {
+      topbar.classList.add('admin-app-topbar');
+      const title = topbar.querySelector('span.font-display');
+      if (title) title.textContent = 'PINPOP Admin';
+      const logo = topbar.querySelector('img');
+      if (logo) {
+        logo.src = '/images/brand/pinpop-admin-192.png';
+        logo.alt = 'PINPOP Admin';
+        logo.classList.add('admin-app-icon');
+      }
+    }
+
+    const content = document.getElementById('adminContentSection');
+    if (content && !document.getElementById('adminAppWelcome')) {
+      const welcome = document.createElement('div');
+      welcome.id = 'adminAppWelcome';
+      welcome.className = 'admin-app-welcome';
+      welcome.innerHTML = `
+        <div class="admin-app-welcome-copy">
+          <span class="admin-app-eyebrow">GESTIÓN RÁPIDA</span>
+          <h2>Hola, PINPOP</h2>
+          <p>Administrá catálogo, stock y pedidos desde tu celular.</p>
+        </div>
+        <div class="admin-app-quick-grid">
+          <button type="button" data-admin-app-action="new-product" class="admin-app-quick admin-app-quick-primary">
+            <span class="admin-app-quick-icon">＋</span>
+            <span>Nuevo producto</span>
+          </button>
+          <button type="button" data-admin-app-action="products" class="admin-app-quick">
+            <span class="admin-app-quick-icon">📦</span>
+            <span>Productos</span>
+          </button>
+          <button type="button" data-admin-app-action="orders" class="admin-app-quick">
+            <span class="admin-app-quick-icon">🛒</span>
+            <span>Pedidos</span>
+          </button>
+          <button type="button" data-admin-app-action="categories" class="admin-app-quick">
+            <span class="admin-app-quick-icon">🏷️</span>
+            <span>Categorías</span>
+          </button>
+        </div>
+      `;
+      content.prepend(welcome);
+    }
+
+    const shell = document.querySelector('#adminModal .admin-modal-shell');
+    if (shell && !document.getElementById('adminAppBottomNav')) {
+      const nav = document.createElement('nav');
+      nav.id = 'adminAppBottomNav';
+      nav.className = 'admin-app-bottom-nav';
+      nav.setAttribute('aria-label', 'Navegación PINPOP Admin');
+      nav.innerHTML = `
+        <button type="button" data-admin-app-tab="dashboard" class="admin-app-nav-btn active">
+          <span>⌂</span><small>Inicio</small>
+        </button>
+        <button type="button" data-admin-app-tab="orders" class="admin-app-nav-btn">
+          <span>☷</span><small>Pedidos</small>
+        </button>
+        <button type="button" data-admin-app-action="new-product" class="admin-app-nav-add" aria-label="Nuevo producto">
+          <span>＋</span>
+        </button>
+        <button type="button" data-admin-app-tab="products" class="admin-app-nav-btn">
+          <span>▦</span><small>Productos</small>
+        </button>
+        <button type="button" data-admin-app-tab="settings" class="admin-app-nav-btn">
+          <span>⚙</span><small>Más</small>
+        </button>
+      `;
+      shell.appendChild(nav);
+    }
+
+    document.addEventListener('click', handleAdminAppAction, false);
     document.title = 'PINPOP Admin';
+  }
+
+  function handleAdminAppAction(event) {
+    if (!isAdminAppMode) return;
+
+    const actionButton = event.target.closest('[data-admin-app-action]');
+    if (actionButton) {
+      const action = actionButton.dataset.adminAppAction;
+      if (action === 'new-product') {
+        const productsTab = document.querySelector('.admin-tab-btn[data-tab="products"]');
+        if (productsTab) productsTab.click();
+        setTimeout(() => document.getElementById('openCreateProductModalBtn')?.click(), 0);
+      } else if (action === 'products') {
+        document.querySelector('.admin-tab-btn[data-tab="products"]')?.click();
+      } else if (action === 'orders') {
+        document.querySelector('.admin-tab-btn[data-tab="orders"]')?.click();
+      } else if (action === 'categories') {
+        document.querySelector('.admin-tab-btn[data-tab="products"]')?.click();
+        setTimeout(() => document.getElementById('openCategoryManagerBtn')?.click(), 0);
+      }
+      return;
+    }
+
+    const tabButton = event.target.closest('[data-admin-app-tab]');
+    if (!tabButton) return;
+
+    const tab = tabButton.dataset.adminAppTab;
+    document.querySelector('.admin-tab-btn[data-tab="' + tab + '"]')?.click();
+
+    document.querySelectorAll('.admin-app-nav-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.adminAppTab === tab);
+    });
   }
 
   function registerAdminPwa() {
@@ -1438,10 +1543,9 @@
     const totalPixels = width * height;
     if (!totalPixels) return false;
 
-    // Conservative white-paper cleanup:
-    // 1) estimate the paper from bright border pixels,
-    // 2) flood-fill only pixels clearly similar to that paper,
-    // 3) keep a protected safety ring around the detected product edge.
+    // Balanced white-paper cleanup:
+    // keeps the stronger whitening/sharp look from the first version,
+    // but protects a 1px ring next to the product so edges are not eaten.
     const rs = [], gs = [], bs = [];
     const step = Math.max(1, Math.floor(Math.min(width, height) / 90));
 
@@ -1449,7 +1553,7 @@
       const i = (y * width + x) * 4;
       const r = data[i], g = data[i + 1], b = data[i + 2];
       const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      if (lum >= 170) {
+      if (lum >= 150) {
         rs.push(r); gs.push(g); bs.push(b);
       }
     };
@@ -1474,14 +1578,11 @@
     const bgLum = 0.2126 * bgR + 0.7152 * bgG + 0.0722 * bgB;
     const bgChroma = Math.max(bgR, bgG, bgB) - Math.min(bgR, bgG, bgB);
 
-    // If the border is not genuinely light paper, leave the image untouched.
-    if (bgLum < 175) return false;
+    if (bgLum < 165) return false;
 
-    // Deliberately stricter than the first version to avoid swallowing pale
-    // highlights, metallic reflections and light-colored product edges.
-    const minLum = Math.max(175, bgLum - 55);
-    const maxChroma = Math.max(46, Math.min(72, bgChroma + 30));
-    const maxColorDistance = 155;
+    const minLum = Math.max(150, bgLum - 90);
+    const maxChroma = Math.max(78, bgChroma + 44);
+    const maxColorDistance = 220;
 
     const visited = new Uint8Array(totalPixels);
     const backgroundMask = new Uint8Array(totalPixels);
@@ -1507,8 +1608,6 @@
       if (isBackgroundCandidate(pixelIndex)) queue[tail++] = pixelIndex;
     };
 
-    // Seed only from the outer border. Internal pale areas of the product are
-    // therefore never selected unless they are actually connected to the paper.
     for (let x = 0; x < width; x++) {
       enqueue(x);
       if (height > 1) enqueue((height - 1) * width + x);
@@ -1532,23 +1631,15 @@
 
     if (!tail) return false;
 
-    // Protect a small ring of detected background immediately around the product.
-    // This compensates for anti-aliased edges, metallic shine and camera blur.
-    const safetyRadius = Math.max(2, Math.min(5, Math.round(Math.min(width, height) / 300)));
+    // One-pixel guard ring only. This preserves anti-aliased contours and
+    // metallic/light edges while keeping the background visibly white and crisp.
     const protectedMask = new Uint8Array(totalPixels);
-    const distanceFromObject = new Int8Array(totalPixels);
-    distanceFromObject.fill(-1);
-    const boundaryQueue = new Int32Array(totalPixels);
-    let boundaryHead = 0, boundaryTail = 0;
 
-    const hasObjectNeighbor = (p) => {
+    const touchesProduct = (p) => {
       const x = p % width;
       const y = Math.floor(p / width);
-      const x0 = Math.max(0, x - 1), x1 = Math.min(width - 1, x + 1);
-      const y0 = Math.max(0, y - 1), y1 = Math.min(height - 1, y + 1);
-
-      for (let ny = y0; ny <= y1; ny++) {
-        for (let nx = x0; nx <= x1; nx++) {
+      for (let ny = Math.max(0, y - 1); ny <= Math.min(height - 1, y + 1); ny++) {
+        for (let nx = Math.max(0, x - 1); nx <= Math.min(width - 1, x + 1); nx++) {
           if (nx === x && ny === y) continue;
           if (!backgroundMask[ny * width + nx]) return true;
         }
@@ -1557,34 +1648,7 @@
     };
 
     for (let p = 0; p < totalPixels; p++) {
-      if (backgroundMask[p] && hasObjectNeighbor(p)) {
-        protectedMask[p] = 1;
-        distanceFromObject[p] = 0;
-        boundaryQueue[boundaryTail++] = p;
-      }
-    }
-
-    // Expand the protected ring only through pixels already classified as paper.
-    while (boundaryHead < boundaryTail) {
-      const p = boundaryQueue[boundaryHead++];
-      const d = distanceFromObject[p];
-      if (d >= safetyRadius - 1) continue;
-
-      const x = p % width;
-      const y = Math.floor(p / width);
-      const neighbors = [
-        x > 0 ? p - 1 : -1,
-        x + 1 < width ? p + 1 : -1,
-        y > 0 ? p - width : -1,
-        y + 1 < height ? p + width : -1
-      ];
-
-      for (const n of neighbors) {
-        if (n < 0 || !backgroundMask[n] || distanceFromObject[n] !== -1) continue;
-        distanceFromObject[n] = d + 1;
-        protectedMask[n] = 1;
-        boundaryQueue[boundaryTail++] = n;
-      }
+      if (backgroundMask[p] && touchesProduct(p)) protectedMask[p] = 1;
     }
 
     let changed = 0;
@@ -3814,6 +3878,11 @@
         btn.classList.remove('text-slate-600');
 
         const tab = btn.dataset.tab;
+        if (isAdminAppMode) {
+          document.querySelectorAll('.admin-app-nav-btn').forEach(navBtn => {
+            navBtn.classList.toggle('active', navBtn.dataset.adminAppTab === tab);
+          });
+        }
         document.querySelectorAll('.admin-tab-content').forEach(c => c.classList.add('hidden'));
         
         if (tab === 'dashboard') {

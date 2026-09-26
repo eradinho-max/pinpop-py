@@ -144,7 +144,7 @@
 
   function registerAdminPwa() {
     if (!('serviceWorker' in navigator)) return;
-    navigator.serviceWorker.register('/admin-sw.js', { scope: '/admin' }).catch(err => {
+    navigator.serviceWorker.register('/admin-sw.js', { scope: '/admin/' }).catch(err => {
       console.warn('PINPOP Admin PWA registration skipped:', err);
     });
   }

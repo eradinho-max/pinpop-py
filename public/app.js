@@ -1438,8 +1438,10 @@
     const totalPixels = width * height;
     if (!totalPixels) return false;
 
-    // Estimate the paper color from bright pixels around the image border.
-    // This works especially well when the product is photographed over white paper.
+    // Conservative white-paper cleanup:
+    // 1) estimate the paper from bright border pixels,
+    // 2) flood-fill only pixels clearly similar to that paper,
+    // 3) keep a protected safety ring around the detected product edge.
     const rs = [], gs = [], bs = [];
     const step = Math.max(1, Math.floor(Math.min(width, height) / 90));
 
@@ -1447,7 +1449,7 @@
       const i = (y * width + x) * 4;
       const r = data[i], g = data[i + 1], b = data[i + 2];
       const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      if (lum >= 145) {
+      if (lum >= 170) {
         rs.push(r); gs.push(g); bs.push(b);
       }
     };
@@ -1472,12 +1474,17 @@
     const bgLum = 0.2126 * bgR + 0.7152 * bgG + 0.0722 * bgB;
     const bgChroma = Math.max(bgR, bgG, bgB) - Math.min(bgR, bgG, bgB);
 
-    // Do nothing when the border is not actually a light paper-like background.
-    if (bgLum < 165) return false;
+    // If the border is not genuinely light paper, leave the image untouched.
+    if (bgLum < 175) return false;
 
-    const minLum = Math.max(140, bgLum - 100);
-    const maxChroma = Math.max(88, bgChroma + 52);
+    // Deliberately stricter than the first version to avoid swallowing pale
+    // highlights, metallic reflections and light-colored product edges.
+    const minLum = Math.max(175, bgLum - 55);
+    const maxChroma = Math.max(46, Math.min(72, bgChroma + 30));
+    const maxColorDistance = 155;
+
     const visited = new Uint8Array(totalPixels);
+    const backgroundMask = new Uint8Array(totalPixels);
     const queue = new Int32Array(totalPixels);
     let head = 0, tail = 0;
 
@@ -1491,7 +1498,7 @@
       if (chroma > maxChroma) return false;
 
       const distance = Math.abs(r - bgR) + Math.abs(g - bgG) + Math.abs(b - bgB);
-      return distance <= 245;
+      return distance <= maxColorDistance;
     };
 
     const enqueue = (pixelIndex) => {
@@ -1500,7 +1507,8 @@
       if (isBackgroundCandidate(pixelIndex)) queue[tail++] = pixelIndex;
     };
 
-    // Seed only from image borders, so light details inside the product are preserved.
+    // Seed only from the outer border. Internal pale areas of the product are
+    // therefore never selected unless they are actually connected to the paper.
     for (let x = 0; x < width; x++) {
       enqueue(x);
       if (height > 1) enqueue((height - 1) * width + x);
@@ -1510,23 +1518,84 @@
       if (width > 1) enqueue(y * width + width - 1);
     }
 
-    let changed = 0;
     while (head < tail) {
       const p = queue[head++];
+      backgroundMask[p] = 1;
       const x = p % width;
       const y = Math.floor(p / width);
-      const i = p * 4;
-
-      data[i] = 255;
-      data[i + 1] = 255;
-      data[i + 2] = 255;
-      data[i + 3] = 255;
-      changed++;
 
       if (x > 0) enqueue(p - 1);
       if (x + 1 < width) enqueue(p + 1);
       if (y > 0) enqueue(p - width);
       if (y + 1 < height) enqueue(p + width);
+    }
+
+    if (!tail) return false;
+
+    // Protect a small ring of detected background immediately around the product.
+    // This compensates for anti-aliased edges, metallic shine and camera blur.
+    const safetyRadius = Math.max(2, Math.min(5, Math.round(Math.min(width, height) / 300)));
+    const protectedMask = new Uint8Array(totalPixels);
+    const distanceFromObject = new Int8Array(totalPixels);
+    distanceFromObject.fill(-1);
+    const boundaryQueue = new Int32Array(totalPixels);
+    let boundaryHead = 0, boundaryTail = 0;
+
+    const hasObjectNeighbor = (p) => {
+      const x = p % width;
+      const y = Math.floor(p / width);
+      const x0 = Math.max(0, x - 1), x1 = Math.min(width - 1, x + 1);
+      const y0 = Math.max(0, y - 1), y1 = Math.min(height - 1, y + 1);
+
+      for (let ny = y0; ny <= y1; ny++) {
+        for (let nx = x0; nx <= x1; nx++) {
+          if (nx === x && ny === y) continue;
+          if (!backgroundMask[ny * width + nx]) return true;
+        }
+      }
+      return false;
+    };
+
+    for (let p = 0; p < totalPixels; p++) {
+      if (backgroundMask[p] && hasObjectNeighbor(p)) {
+        protectedMask[p] = 1;
+        distanceFromObject[p] = 0;
+        boundaryQueue[boundaryTail++] = p;
+      }
+    }
+
+    // Expand the protected ring only through pixels already classified as paper.
+    while (boundaryHead < boundaryTail) {
+      const p = boundaryQueue[boundaryHead++];
+      const d = distanceFromObject[p];
+      if (d >= safetyRadius - 1) continue;
+
+      const x = p % width;
+      const y = Math.floor(p / width);
+      const neighbors = [
+        x > 0 ? p - 1 : -1,
+        x + 1 < width ? p + 1 : -1,
+        y > 0 ? p - width : -1,
+        y + 1 < height ? p + width : -1
+      ];
+
+      for (const n of neighbors) {
+        if (n < 0 || !backgroundMask[n] || distanceFromObject[n] !== -1) continue;
+        distanceFromObject[n] = d + 1;
+        protectedMask[n] = 1;
+        boundaryQueue[boundaryTail++] = n;
+      }
+    }
+
+    let changed = 0;
+    for (let p = 0; p < totalPixels; p++) {
+      if (!backgroundMask[p] || protectedMask[p]) continue;
+      const i = p * 4;
+      data[i] = 255;
+      data[i + 1] = 255;
+      data[i + 2] = 255;
+      data[i + 3] = 255;
+      changed++;
     }
 
     if (changed > 0) ctx.putImageData(imageData, 0, 0);

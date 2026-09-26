@@ -207,11 +207,7 @@ app.use('/images', express.static(path.join(__dirname, 'public/images')));
 
 // Dedicated installable administrative shell. It reuses the existing admin UI
 // and backend, but is intentionally noindex and opens in standalone PWA mode.
-app.get('/admin', (req, res) => {
-  return res.redirect(302, '/admin/');
-});
-
-app.get('/admin/', (req, res) => {
+app.get(['/admin', '/admin/'], (req, res) => {
   try {
     const indexPath = path.join(__dirname, 'public/index.html');
     let html = fs.readFileSync(indexPath, 'utf8');

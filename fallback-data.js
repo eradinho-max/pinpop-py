@@ -487,6 +487,13 @@ const categories = [
     "active": true
   },
   {
+    "id": "fallback-cat-18",
+    "name": "Pins Metálicos",
+    "target_type": "crocs",
+    "targetType": "crocs",
+    "active": true
+  },
+  {
     "id": "fallback-cat-13",
     "name": "Cardiología",
     "target_type": "estetoscopio",

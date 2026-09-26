@@ -2,24 +2,30 @@
   "name": "PINPOP Admin",
   "short_name": "PINPOP Admin",
   "description": "Administración privada de catálogo, stock y pedidos PINPOP.",
-  "id": "/admin",
-  "start_url": "/admin",
-  "scope": "/admin",
+  "id": "/admin/",
+  "start_url": "/admin/",
+  "scope": "/admin/",
   "display": "standalone",
-  "display_override": ["window-controls-overlay", "standalone"],
   "background_color": "#F4F5F7",
   "theme_color": "#111111",
   "orientation": "portrait-primary",
+  "prefer_related_applications": false,
   "icons": [
     {
-      "src": "/images/brand/pinpop-logo-web.png",
-      "sizes": "any",
+      "src": "/images/brand/pinpop-admin-192.png",
+      "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/images/brand/pinpop-logo-web.png",
-      "sizes": "any",
+      "src": "/images/brand/pinpop-admin-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/brand/pinpop-admin-512.png",
+      "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
     }

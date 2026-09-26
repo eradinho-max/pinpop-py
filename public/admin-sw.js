@@ -1,11 +1,12 @@
-const CACHE_NAME = 'pinpop-admin-v1';
+const CACHE_NAME = 'pinpop-admin-v2';
 const APP_SHELL = [
-  '/admin',
+  '/admin/',
   '/style.css?v=2.3.8',
   '/tailwind-built.css?v=2.2.2',
   '/vendor/icons.js?v=2.2.2',
   '/app.js?v=2.3.8',
-  '/images/brand/pinpop-logo-web.png'
+  '/images/brand/pinpop-admin-192.png',
+  '/images/brand/pinpop-admin-512.png'
 ];
 
 self.addEventListener('install', event => {
@@ -30,22 +31,20 @@ self.addEventListener('fetch', event => {
 
   const url = new URL(request.url);
 
-  // Never cache live API/admin data.
   if (url.pathname.startsWith('/api/')) {
     event.respondWith(fetch(request));
     return;
   }
 
-  // Admin navigation: network first so a new deployment is picked up quickly.
   if (request.mode === 'navigate' && url.pathname.startsWith('/admin')) {
     event.respondWith(
       fetch(request)
         .then(response => {
           const clone = response.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put('/admin', clone));
+          caches.open(CACHE_NAME).then(cache => cache.put('/admin/', clone));
           return response;
         })
-        .catch(() => caches.match('/admin'))
+        .catch(() => caches.match('/admin/'))
     );
     return;
   }
